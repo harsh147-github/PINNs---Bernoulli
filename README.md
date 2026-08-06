@@ -98,45 +98,110 @@ Cross-sectional area: $A(x; D_t) = \dfrac{\pi}{4}D(x;D_t)^2$.
 
 > **Any incompressible, inviscid fluid works here, not just water.** $\rho$, $V_{in}$, and $p_{in}$ never appear inside the residuals the network is trained against (§3.5) — they only rescale the network's dimensionless output back into SI units at export time. The trained network itself is fluid-agnostic; swapping the config from air to water (or any other density) requires no retraining, only re-running the SI conversion.
 
-### 3.3 Stage 1 physics — the exact equations the PINN must satisfy
+### 3.3 What the assumptions actually mean, before we derive anything
 
-Steady, incompressible, inviscid, quasi-1D flow (area changes are gradual, so the flow is treated as one-dimensional across each cross-section):
+Every equation below rests on four assumptions. Each one is doing real work — be honest about what it buys and what it costs:
 
-**Conservation of mass (continuity)** — the same volumetric flow rate $Q$ passes every cross-section:
+- **Steady.** Nothing changes with time. Turn on the tap, let the initial sloshing settle, and from then on the velocity and pressure at any *fixed point* in the duct stay constant forever. This kills every $\partial/\partial t$ term before we even start.
+- **Incompressible.** The fluid's density $\rho$ doesn't change, no matter how fast it gets squeezed through the throat. Water at everyday pressures fits this beautifully — it takes enormous pressure to compress it measurably. (Air stops fitting this once it gets fast — that's Stage 2, §3.9.)
+- **Inviscid.** We ignore internal friction (viscosity). Real water has some, but for a short, smoothly-tapered duct like ours, friction losses are small next to the pressure changes the area change itself causes — so dropping viscosity is a fair first approximation, and it's the one assumption that turns a genuinely hard problem (Navier–Stokes) into an easy one (Euler → Bernoulli).
+- **Quasi-1D.** We track exactly one number for velocity and one for pressure *per cross-section*, as if the fluid moves in flat slugs straight down the axis with no swirling. Valid as long as the duct's diameter changes gradually — which ours does by construction (§3.2).
 
-$$A(x)\,V(x) = Q = \text{const} \qquad\Longleftrightarrow\qquad \frac{d}{dx}\big[A(x)\,V(x)\big] = 0 \tag{1}$$
+Two pieces of notation used everywhere below: $x$ is distance along the duct axis, and a **streamline** is the path one fluid particle actually traces — under these assumptions, a straight line down the axis.
 
-**Bernoulli's theorem (energy/momentum along a streamline)** — for steady incompressible inviscid flow, total head is constant:
+### 3.4 Deriving continuity — mass has nowhere to disappear to
 
-$$p(x) + \tfrac{1}{2}\rho V(x)^2 = p_0 = \text{const} \qquad\Longleftrightarrow\qquad V\frac{dV}{dx} + \frac{1}{\rho}\frac{dp}{dx} = 0 \tag{2}$$
+Picture the duct as a stack of cross-sections. Take any two, at positions $x_1$ and $x_2$, with areas $A_1, A_2$ and velocities $V_1, V_2$.
 
-(The differential form on the right is what the PINN differentiates; it is the quasi-1D Euler momentum equation with constant $\rho$.)
+In one second, a "slug" of fluid of length $V_1$ metres and cross-section $A_1$ passes through station 1. Its mass:
 
-**Boundary conditions:**
+$$\dot m_1 = \rho \cdot A_1 \cdot V_1 \qquad [\text{kg/s} = \text{density}\times\text{volume-per-second}]$$
+
+and the same logic gives $\dot m_2 = \rho A_2 V_2$ at station 2.
+
+Here's the physical fact that does all the work: this is a *closed duct*. Fluid can't appear or vanish inside it, and because the flow is **steady**, nothing accumulates anywhere either — so whatever mass flows in per second at station 1 must flow out per second at station 2:
+
+$$\dot m_1 = \dot m_2 \quad\Longrightarrow\quad \rho A_1 V_1 = \rho A_2 V_2$$
+
+Because the fluid is **incompressible**, $\rho$ is the same everywhere and cancels straight out:
+
+$$A_1 V_1 = A_2 V_2 \qquad \text{— true for } \textit{any} \text{ two stations}$$
+
+which is exactly the statement "$A(x)V(x)$ is the same constant at every $x$." Write it as a function of $x$ and differentiate (a constant has zero slope):
+
+$$A(x)\,V(x) = \text{const} \qquad\Longleftrightarrow\qquad \frac{d}{dx}\big[A(x)\,V(x)\big] = 0 \tag{1}$$
+
+That's the continuity equation. In one sentence: **narrower duct → the same mass has to squeeze through a smaller opening → it must move faster.**
+
+### 3.5 Deriving Bernoulli's theorem — $F=ma$ applied to a slug of fluid
+
+Most people learn this as a fact to memorize. Here it is, built from Newton's second law — the same law you'd use for a block sliding down a ramp.
+
+Take a small slug of fluid inside the duct: cross-section $A$, length $dx$, centred at position $x$, moving with velocity $V(x)$. Its mass:
+
+$$dm = \rho\, A\, dx$$
+
+**What pushes on it?** Fluid immediately behind, at pressure $p(x)$, pushes it forward with force $p\cdot A$. Fluid immediately ahead, at pressure $p(x+dx) = p+dp$, pushes back with force $(p+dp)\cdot A$. (Friction is already assumed away — inviscid — and the duct is horizontal, so no gravity term.) Net forward force:
+
+$$F = p\cdot A - (p+dp)\cdot A = -A\,dp$$
+
+If pressure rises in the direction of travel ($dp>0$), the net force is backward — the fluid decelerates. That sign is carrying real physics: it's the entire reason a widening duct slows the flow down.
+
+**What's the slug's acceleration?** Not $dV/dt$ — nothing here depends on time (steady flow). Instead: as the slug moves forward by $dx$, its velocity changes by however much $V$ changes over that distance, $dV$. Acceleration is "how fast velocity changes per unit time," and the time to cross $dx$ is $dx/V$, so:
+
+$$a = \frac{dV}{dt} = \frac{dV}{dx}\cdot\frac{dx}{dt} = V\,\frac{dV}{dx}$$
+
+This is *convective* acceleration — a fluid particle speeds up not because time is passing, but because it's moving into a region where the flow happens to be faster (the narrowing throat ahead of it).
+
+**Apply $F=ma$:**
+
+$$-A\,dp = (\rho A\,dx)\left(V\,\frac{dV}{dx}\right)$$
+
+Cancel $A$, and note $\frac{dV}{dx}\cdot dx = dV$ on the right:
+
+$$-dp = \rho\,V\,dV \qquad\Longrightarrow\qquad dp + \rho V\,dV = 0$$
+
+Divide by $dx$ for the differential form:
+
+$$\frac{dp}{dx} + \rho V\,\frac{dV}{dx} = 0 \qquad\Longleftrightarrow\qquad V\frac{dV}{dx} + \frac{1}{\rho}\frac{dp}{dx} = 0 \tag{2}$$
+
+or integrate $dp = -\rho V\,dV$ directly along $x$:
+
+$$p + \tfrac{1}{2}\rho V^2 = \text{const}$$
+
+That's Bernoulli's theorem, and now you know exactly where it comes from: **it is $F=ma$ for a fluid slug, with friction and gravity assumed away.** In one sentence: **speeding up costs pressure — a fluid element can't accelerate for free, and the only thing available to push it is the pressure difference across it.**
+
+### 3.6 Boundary conditions — pinning down *which* solution
+
+Equations (1)–(2) constrain the *shape* of $V(x)$ and $p(x)$ but not their absolute values — infinitely many flows share that shape, one for every possible inlet speed. We need one more fact to select the one flow actually happening: what's true at the inlet, which we set or measure directly:
 
 $$V(0) = V_{in}, \qquad p(0) = p_{in} \tag{3}$$
 
-### 3.4 The closed-form analytical solution (our ground truth)
+### 3.7 Solving it by hand — the closed-form answer
 
-Equations (1)–(3) are exactly solvable — this is why Bernoulli is the perfect teaching case. Given $A(x)$:
+From continuity (Eq. 1), $A(x)V(x)$ equals the same constant everywhere, including at $x=0$, so $A(x)V(x) = A_{in}V_{in}$:
+
+$$V(x) = V_{in}\,\frac{A_{in}}{A(x)}$$
+
+Substitute into Bernoulli's constant, fixed by the boundary condition at $x=0$ (where $p+\tfrac12\rho V^2 = p_{in}+\tfrac12\rho V_{in}^2$, the same sum everywhere):
 
 $$\boxed{\;V(x) = V_{in}\,\frac{A_{in}}{A(x)}, \qquad p(x) = p_{in} + \tfrac{1}{2}\rho\left(V_{in}^2 - V(x)^2\right)\;} \tag{4}$$
 
-Physical intuition the PINN must reproduce: where the duct **converges**, area drops → continuity forces velocity **up** → Bernoulli forces pressure **down**. The throat is the point of maximum velocity and minimum pressure. In the diverging section everything mirrors back. Every training run is validated against Eq. (4) with relative $L^2$ errors — no CFD data is ever needed.
+Physical intuition the PINN must reproduce: where the duct **converges**, area drops → continuity forces velocity **up** → Bernoulli forces pressure **down**. The throat is the point of maximum velocity and minimum pressure. In the diverging section everything mirrors back. Every training run is validated against Eq. (4) with relative $L^2$ errors — no CFD data is ever needed, because we solved the exact answer by hand, right here.
 
-### 3.5 Non-dimensionalization (do not skip this — it makes training work)
+### 3.8 Non-dimensionalization — why the network needs rescaled numbers
 
-Neural networks train poorly when inputs/outputs span wildly different scales (here: $x \sim 1$, $p \sim 10^5$). We non-dimensionalize:
+Here's a concrete problem: at the inlet, $x=0\,\text m$ but $p=101{,}325\,\text{Pa}$ — six orders of magnitude apart. A freshly-initialized network's weights are small random numbers; asked to output something around $10^5$ from an input around $1$, it would need to learn enormous weights before training even gets started, and the loss landscape it has to descend is badly distorted by that scale mismatch. Neural networks train well when everything — inputs *and* outputs — sits around order 1. So we rescale every quantity by a natural reference value:
 
 $$\tilde{x} = \frac{x}{L},\quad \tilde{A} = \frac{A}{A_{in}},\quad \tilde{D}_t = \frac{D_t}{D_{in}},\quad \tilde{V} = \frac{V}{V_{in}},\quad \tilde{p} = \frac{p - p_{in}}{\tfrac{1}{2}\rho V_{in}^2}$$
 
-The physics becomes parameter-free and elegant:
+Divide Eq. (1) through by $A_{in}V_{in}$ and Eq. (2)'s integrated form by $\tfrac12\rho V_{in}^2$, and every constant ($\rho$, $V_{in}$, $p_{in}$, $L$, $D_{in}$) cancels out completely — the physics becomes parameter-free:
 
 $$\frac{d}{d\tilde{x}}\big[\tilde{A}\,\tilde{V}\big] = 0, \qquad \frac{d}{d\tilde{x}}\left(\tilde{p} + \tilde{V}^2\right) = 0, \qquad \tilde{V}(0)=1,\ \ \tilde{p}(0)=0 \tag{5}$$
 
-and the analytical target is $\tilde{V} = 1/\tilde{A}$, $\tilde{p} = 1 - \tilde{V}^2$. Everything the network sees and produces is $O(1)$. The code converts back to SI units only at export time.
+and the analytical target becomes $\tilde{V} = 1/\tilde{A}$, $\tilde{p} = 1 - \tilde{V}^2$. Everything the network ever sees or produces is $O(1)$; SI units only reappear at the very last step, when `export.py` converts the trained network's output back using $\rho$, $V_{in}$, $p_{in}$. (This is also *why* the fluid — water, air, anything incompressible — never needs to be baked into the network: those constants don't appear in Eq. (5) at all.)
 
-### 3.6 Stage 2 physics — compressible quasi-1D Euler (included extension)
+### 3.9 Stage 2 physics — compressible quasi-1D Euler (included extension)
 
 When the throat velocity approaches the speed of sound, incompressibility breaks. The quasi-1D steady Euler system replaces Eq. (2):
 
@@ -148,42 +213,86 @@ with network outputs $(\tilde{\rho}, \tilde{V}, \tilde{p}, \tilde{T})$ and valid
 
 ## 4. PINN theory from absolute zero
 
-### 4.1 What the neural network is, mathematically
+### 4.1 What a single neuron computes
 
-A fully connected network is a nested function. With input vector $\mathbf{z}^{(0)} = (\tilde{x}, \tilde{D}_t)$:
+Forget "neural network" for a second. One artificial neuron is arithmetic you could do on paper: it takes some numbers in, multiplies each by its own weight, adds them up plus one more number (a bias), and passes the result through a small nonlinear function:
 
-$$\mathbf{z}^{(k)} = \phi\!\left(W^{(k)} \mathbf{z}^{(k-1)} + \mathbf{b}^{(k)}\right),\quad k = 1..K; \qquad \hat{\mathbf{y}} = W^{(K+1)}\mathbf{z}^{(K)} + \mathbf{b}^{(K+1)}$$
+$$z = w_1 x_1 + w_2 x_2 + b, \qquad \text{output} = \phi(z)$$
 
-- $W^{(k)}$ = **weight matrices**, $\mathbf{b}^{(k)}$ = **bias vectors** → together $\theta$, all trainable parameters.
-- $\phi$ = **activation** (we use $\tanh$; smooth and infinitely differentiable — *required*, because we will differentiate the network output to build PDE residuals; ReLU's kinks would poison second derivatives).
-- $\hat{\mathbf{y}} = (\hat{\tilde{V}}, \hat{\tilde{p}})$ — the predicted velocity and pressure at that point, for that throat diameter.
+Worked example. Say $x_1=0.5$ (our $\tilde x$ — some position along the duct) and $x_2=0.7$ (our $\tilde D_t$ — some throat size), and this particular neuron has learned $w_1=0.8,\ w_2=-0.3,\ b=0.1$:
 
-**Forward propagation** = evaluating this chain. By the universal approximation theorem, enough neurons can approximate any smooth function — including our nozzle solution.
+$$z = 0.8(0.5) + (-0.3)(0.7) + 0.1 = 0.4 - 0.21 + 0.1 = 0.29$$
 
-### 4.2 The PINN trick: automatic differentiation of the network
+Apply the activation function $\phi=\tanh$:
 
-Because the network is a closed-form composition of differentiable ops, we can ask PyTorch for **exact** derivatives of outputs w.r.t. inputs:
+$$\phi(0.29) = \tanh(0.29) \approx 0.282$$
 
-$$\frac{\partial \hat{\tilde{V}}}{\partial \tilde{x}},\quad \frac{\partial \hat{\tilde{p}}}{\partial \tilde{x}},\quad \frac{\partial \hat{\tilde{V}}}{\partial \tilde{D}_t},\ \dots$$
+That single number, $0.282$, is the neuron's output — the entire "intelligence" of one neuron is a weighted sum plus a squashing function. Nothing more mysterious happens anywhere in this network; everything below is just many of these, wired together.
 
-via `torch.autograd.grad` — machine-precision, no finite-difference error, no mesh. This is what separates a PINN from curve fitting: **the derivatives in the differential equations are computed analytically through the network's own graph.**
+**Why bother with the squashing function $\phi$?** Without it, stacking layers would collapse algebraically into one giant linear equation — no matter how many layers, the network could only ever represent a straight line. A nonlinearity is what lets stacked layers bend and combine into arbitrarily complicated curves.
 
-### 4.3 Backpropagation
+**Why $\tanh$ specifically**, and not the more popular ReLU (which just clips negative numbers to zero)? Because §4.6 is going to ask PyTorch for the *derivative* of this network's output — and for the PDE residuals, *the derivative of that derivative*. $\tanh$ is a smooth S-curve with a well-defined slope everywhere, at every order. ReLU has a sharp corner at zero where its second derivative doesn't exist — for a PINN, that corner would poison the physics residual, since the residual literally *is built from* a derivative of the network's output.
 
-The loss $\mathcal{L}(\theta)$ (Section 5) is a scalar. Backpropagation applies the chain rule through the same computational graph to get $\nabla_\theta \mathcal{L}$ — the gradient of the loss w.r.t. every weight and bias. The optimizer then steps downhill. Two optimizers, two roles (standard practice since Raissi et al. 2019):
+### 4.2 Stacking neurons: forward propagation through the whole network
 
-- **Adam** (adaptive learning rates, robust to bad conditioning) does the bulk of training: `lr=1e-3`, ~20,000 epochs.
-- **L-BFGS** (quasi-Newton, full-batch, uses curvature) polishes convergence to $10^{-5}$–$10^{-7}$ loss levels where Adam stalls.
+One neuron gives one number. A **layer** is many neurons run side-by-side on the same input, each with its own weights — a layer of 64 neurons turns 2 input numbers into 64 output numbers. Feed those 64 numbers as the input to the *next* layer of 64 neurons, and so on for 6 layers, then a final small linear layer (no activation) produces the two numbers we actually want: a guess at $\tilde V$ and a guess at $\tilde p$.
 
-### 4.4 Why the equations can replace training data
+Written compactly, with $\mathbf z^{(0)} = (\tilde x, \tilde D_t)$ the input:
 
-A data-driven network needs labeled examples $(x \to y)$. We have none — and need none. The governing equations are *a complete specification of the solution*: any function $(\hat V, \hat p)$ that satisfies continuity, momentum, and the boundary conditions everywhere **is** the flow. So we penalize the *violation* of the equations at thousands of random **collocation points**. The equations themselves manufacture the supervision — this is the core advantage you asked about: *physics supplies infinite, free, exact training signal with physical reality baked in.*
+$$\mathbf{z}^{(k)} = \tanh\!\left(W^{(k)} \mathbf{z}^{(k-1)} + \mathbf{b}^{(k)}\right),\quad k = 1..6; \qquad \hat{\mathbf{y}} = W^{(7)}\mathbf{z}^{(6)} + \mathbf{b}^{(7)}$$
+
+Every $W^{(k)}$ (a grid of weights) and $\mathbf b^{(k)}$ (a list of biases) is a **trainable parameter** — this particular network has 21,122 of them, and training is nothing but slowly adjusting all 21,122 until the output starts obeying the physics from Section 3. This left-to-right evaluation — plug in $(\tilde x,\tilde D_t)$, read off $(\hat{\tilde V}, \hat{\tilde p})$ — is the **forward pass**, and it is exactly what `networks.py`'s `raw()` method computes (§8 has the real code).
+
+### 4.3 Why can a pile of arithmetic like this possibly learn Bernoulli's equation?
+
+This isn't hand-waving: it's a real, proven result called the **universal approximation theorem** — a network with enough neurons in one hidden layer can approximate *any* continuous function on a bounded domain to arbitrary accuracy. Our target functions, $\tilde V(\tilde x,\tilde D_t)=1/\tilde A$ and $\tilde p = 1-\tilde V^2$ (Eq. 4/5), are smooth, bounded, well-behaved functions of two variables — squarely inside what a 6-layer, 64-neuron-wide network can represent. The open question was never "can this architecture represent the answer" — it's "how do we push the weights toward that particular answer without ever being told what it is." That's the rest of this section.
+
+### 4.4 The real problem: we have no labelled examples
+
+Ordinary ("supervised") machine learning needs pairs: here's an input, here's the *correct* output, adjust the weights until your guesses match. A cat/dog classifier needs a pile of photos each labelled "cat" or "dog." Our situation is different: nobody ran a real experiment or a CFD simulation to hand us correct $(x,D_t)\to(V,p)$ triples anywhere in this repository. That data simply doesn't exist here, by design.
+
+What we *do* have is something stronger than any finite pile of labelled examples: **two equations that must hold at every single point in the duct, for every throat size** (Eq. 1, Eq. 2). If a candidate function $(\hat V(x),\hat p(x))$ satisfies continuity, Bernoulli, and the boundary condition everywhere, there is exactly one such function — and it is the true flow. So instead of grading the network against known answers, we grade it against *how badly it currently violates the equations*, and push it to make that violation shrink to zero. That's the whole idea of a **Physics-Informed Neural Network**, and it's why the fluid never needs a labelled dataset: the equations themselves manufacture infinite, free, exact supervision.
+
+### 4.5 The chain rule, refreshed
+
+To grade "how badly the equations are violated" we need $\partial\hat{\tilde V}/\partial\tilde x$ — the network's output has to be differentiated. Here's the calculus fact that makes this tractable: if $y$ is built by composing simple functions, $y=f(g(x))$, then:
+
+$$\frac{dy}{dx} = f'(g(x))\cdot g'(x)$$
+
+— the derivative of a chain of functions is the product of each link's own derivative. The forward pass in §4.2 is *exactly* a long chain like this: multiply, add, $\tanh$, multiply, add, $\tanh$, ... seven times over. Every link in that chain has a trivially simple, known derivative — $\tanh'(z) = 1-\tanh^2(z)$, and multiply/add's derivatives are just the weights themselves.
+
+### 4.6 Automatic differentiation — PyTorch does the chain rule for you, exactly
+
+This is the one trick that makes PINNs possible at all. When PyTorch runs the forward pass, it doesn't just compute the output number — it silently records *every operation used to compute it*, building what's called a **computational graph**. Because it knows every link in that chain and every link's own derivative, it can walk the graph backward and apply the chain rule from §4.5 automatically, link by link, handing back the *exact* derivative — not an approximation, not a finite-difference estimate with rounding error, the literal calculus answer, to floating-point precision.
+
+Tiny worked example, matching what `physics.py` actually does: suppose (for illustration) the whole network collapsed to one neuron, $\hat{\tilde V} = \tanh(w\tilde x + b)$. By the chain rule:
+
+$$\frac{\partial\hat{\tilde V}}{\partial\tilde x} = \big(1-\tanh^2(w\tilde x+b)\big)\cdot w$$
+
+You could derive that by hand for one neuron. For a 21,122-parameter, 7-layer network, deriving it by hand would be an enormous mess — and you never have to, because this one line, called on the network's actual output, does it generically for *any* network:
+
+```python
+torch.autograd.grad(y, x, grad_outputs=torch.ones_like(y), create_graph=True)[0]
+```
+
+That call is standing in for the entire chain-rule expansion above, computed automatically. `create_graph=True` is what keeps *this derivative itself* differentiable — because later we differentiate the *loss* (built from this derivative) with respect to the network's weights, one differentiation deeper still. This is exactly `physics.py`'s `_grad()` helper — see §8.
+
+### 4.7 Backpropagation and training
+
+The loss $\mathcal{L}(\theta)$ (Section 5) is one scalar number built from these residuals. **Backpropagation** applies the same chain-rule machinery from §4.6, one level up: instead of "how does the output change if I nudge the input," it asks "how does the *loss* change if I nudge *each of the 21,122 weights*" — giving $\nabla_\theta\mathcal L$, one number per weight, all computed in a single backward pass through the graph.
+
+Picture each weight as a dial. Gradient descent is mechanically simple: for every dial, the gradient tells you which direction increases the loss, so you turn it slightly the *other* way, and repeat thousands of times. Two optimizers do this here, in sequence, each covering for the other's weakness (standard practice since Raissi et al. 2019):
+
+- **Adam** — adapts its own step size per-dial and remembers a running average of recent gradients (momentum), which makes it robust to the wildly uneven, initially chaotic loss landscape a fresh network starts on. It does the bulk of training: `lr=1e-3`, ~20,000 epochs, and gets the loss most of the way down.
+- **L-BFGS** — a quasi-Newton method: once Adam has found the right neighbourhood, L-BFGS uses *curvature* information (not just slope, but how the slope itself is changing) to take far more precise steps, squeezing the loss down another one to two orders of magnitude where Adam stalls. It's more expensive per step, which is why it only runs for the final polish.
 
 ---
 
 ## 5. How the equations become loss functions
 
-This is the heart of the build. Each physics statement maps to one mean-squared-error term. From Eq. (5):
+This is the heart of the build — where Sections 3 and 4 actually meet. Take Eq. (5): both equations there are of the form "*this expression equals zero*." Pick a handful of random points $(\tilde x_i, \tilde D_{t,i})$ inside the duct — these are called **collocation points**, and they're the closest thing this project has to "training data," except they carry no answer, only a location to check. At each one, run the network forward (§4.2), differentiate its output with respect to $\tilde x$ (§4.6), and plug the result into the left-hand side of the equation. Call that number the **residual** — it measures exactly how far the network's current guess is from obeying the physics at that one point. If the network were perfect, every residual would be exactly zero, everywhere. It isn't, yet — so we square each residual (to make positive and negative violations equally bad, and to punish large violations harder than small ones), average over all the collocation points, and that average *is* one term of the loss. Shrinking the loss via gradient descent (§4.7) is mechanically identical to nudging the network toward a shape that satisfies the equations more and more exactly, at more and more points, until it generalizes to *every* point — not just the ones it was checked at.
+
+With that mechanism understood, here is each term precisely. Each physics statement maps to one mean-squared-error term. From Eq. (5):
 
 **① Continuity residual** (Eq. 1, penalized at $N_f$ collocation points $\{\tilde{x}_i, \tilde{D}_{t,i}\}$):
 

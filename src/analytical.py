@@ -1,4 +1,4 @@
-"""Closed-form analytical solution — README Eq. (4), Section 3.4/3.5.
+"""Closed-form analytical solution — README Eq. (4), Section 3.7/3.8.
 
 This is the ground truth the PINN is validated against. No CFD data anywhere.
 

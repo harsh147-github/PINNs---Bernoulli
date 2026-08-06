@@ -25,7 +25,7 @@ def area(x: torch.Tensor, dt: torch.Tensor, L: float, D_in: float) -> torch.Tens
 
 
 def area_nondim(xt: torch.Tensor, dtt: torch.Tensor) -> torch.Tensor:
-    """Non-dimensional area A~/A_in. README Section 3.5.
+    """Non-dimensional area A~/A_in. README Section 3.8.
 
     D/D_in = 1 + (dtt - 1) * sin^2(pi * xt),  A~ = (D/D_in)^2
     with xt = x/L in [0,1], dtt = Dt/D_in.
