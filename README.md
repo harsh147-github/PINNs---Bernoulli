@@ -298,31 +298,132 @@ With that mechanism understood, here is each term precisely. Each physics statem
 
 $$r_{cont} = \frac{\partial}{\partial \tilde{x}}\big[\tilde{A}(\tilde{x};\tilde{D}_t)\,\hat{\tilde{V}}\big], \qquad \mathcal{L}_{cont} = \frac{1}{N_f}\sum_{i=1}^{N_f} r_{cont}(\tilde{x}_i, \tilde{D}_{t,i})^2$$
 
-$\tilde{A}(\tilde x;\tilde D_t)$ is known analytically (geometry module) and differentiated together with $\hat{\tilde V}$ — the chain rule handles the product.
+$\tilde{A}(\tilde x;\tilde D_t)$ is known analytically (geometry module) and differentiated together with $\hat{\tilde V}$ — the chain rule handles the product. That whole line of math is these two functions, `src/physics.py` computing $r_{cont}$ and `src/losses.py` squaring/averaging it into $\mathcal L_{cont}$:
 
-**② Momentum/Bernoulli residual** (Eq. 2):
+```python
+# src/physics.py — the residual: compute r_cont at every collocation point
+def _grad(y, x):
+    """Exact dy/dx through the network's own computation graph (§4.6)."""
+    return torch.autograd.grad(y, x, grad_outputs=torch.ones_like(y), create_graph=True)[0]
+
+def residual_continuity(model, xt, dtt):
+    """r_cont = d(A~ * V~)/dxt. Zero everywhere for a perfect solution."""
+    xt = xt.requires_grad_(True)      # tell PyTorch: track operations on xt, we'll need d/dxt later
+    v, _ = model(xt, dtt)             # forward pass (§4.2) — the network's current guess at V~
+    flux = area_nondim(xt, dtt) * v   # this is A~ * V~ from Eq. (1)
+    return _grad(flux, xt)            # d(A~*V~)/dxt — exactly r_cont
+```
+
+```python
+# src/losses.py — the loss term: square it and average over all N_f points
+def loss_continuity(model, xt, dtt):
+    """L_cont — mean squared continuity residual (Eq. 1)."""
+    return torch.mean(residual_continuity(model, xt, dtt) ** 2)
+```
+
+`xt` here isn't one number — it's a column of $N_f=4{,}096$ random collocation points at once (§7), so `residual_continuity` returns 4,096 residuals in one shot, and `torch.mean(...** 2)` really is computing $\frac{1}{N_f}\sum_i r_{cont,i}^2$ from the formula above, literally.
+
+**② Momentum/Bernoulli residual** (Eq. 2) — same pattern, different quantity differentiated:
 
 $$r_{mom} = \frac{\partial}{\partial \tilde{x}}\left(\hat{\tilde{p}} + \hat{\tilde{V}}^2\right), \qquad \mathcal{L}_{mom} = \frac{1}{N_f}\sum_{i=1}^{N_f} r_{mom}(\tilde{x}_i, \tilde{D}_{t,i})^2$$
 
+```python
+# src/physics.py
+def residual_momentum(model, xt, dtt):
+    """r_mom = d(p~ + V~^2)/dxt -- Bernoulli says total head is constant."""
+    xt = xt.requires_grad_(True)
+    v, p = model(xt, dtt)
+    total_head = p + v**2             # p~ + V~^2 from Eq. (2), integrated form
+    return _grad(total_head, xt)      # its slope should be zero -- that's r_mom
+```
+
+```python
+# src/losses.py
+def loss_momentum(model, xt, dtt):
+    """L_mom — mean squared Bernoulli/momentum residual (Eq. 2)."""
+    return torch.mean(residual_momentum(model, xt, dtt) ** 2)
+```
+
 **③ Boundary conditions** (Eq. 3) — two options, both implemented:
 
-- *Soft* (penalty): $\mathcal{L}_{bc} = \big(\hat{\tilde V}(0,\tilde D_t) - 1\big)^2 + \big(\hat{\tilde p}(0,\tilde D_t)\big)^2$ averaged over sampled $\tilde D_t$ values.
-- *Hard* (architectural, Lagaris-style / Sun et al. 2020): bake the BC into the output transform so it is satisfied exactly, by construction:
+- *Soft* (penalty): $\mathcal{L}_{bc} = \big(\hat{\tilde V}(0,\tilde D_t) - 1\big)^2 + \big(\hat{\tilde p}(0,\tilde D_t)\big)^2$ averaged over sampled $\tilde D_t$ values — literally `src/losses.py`'s `loss_bc_soft`:
+
+  ```python
+  def loss_bc_soft(model, dtt_b):
+      """L_bc — soft inlet-condition penalty (only when hard_bc: false)."""
+      xt0 = torch.zeros_like(dtt_b)     # force x~ = 0 -- evaluate exactly at the inlet
+      v, p = model(xt0, dtt_b)
+      return torch.mean((v - 1.0) ** 2 + p**2)   # how far from V~=1, p~=0
+  ```
+
+- *Hard* (architectural, Lagaris-style / Sun et al. 2020): bake the BC into the output transform so it is satisfied exactly, by construction, instead of merely penalized:
 
 $$\hat{\tilde V}(\tilde x) = 1 + \tilde{x}\,\mathcal{N}_V(\tilde x, \tilde D_t), \qquad \hat{\tilde p}(\tilde x) = \tilde{x}\,\mathcal{N}_p(\tilde x, \tilde D_t)$$
 
-At $\tilde x = 0$ these give $\hat{\tilde V}=1$, $\hat{\tilde p}=0$ identically — the optimizer cannot violate them. Hard BCs are the default (the literature shows they train cleaner in data-free regimes).
+  which is `src/networks.py`'s `forward` (§4.2's $\hat{\mathbf y}$, wrapped):
 
-**④ Total loss:**
+  ```python
+  def forward(self, xt, dtt):
+      out = self.raw(xt, dtt)              # N_V, N_p — the network's two raw outputs
+      n_v, n_p = out[:, 0:1], out[:, 1:2]
+      if self.hard_bc:
+          v = 1.0 + xt * n_v                # V~(0) = 1 exactly, for every xt including 0
+          p = xt * n_p                      # p~(0) = 0 exactly
+      else:
+          v, p = n_v, n_p                   # raw outputs; loss_bc_soft corrects them instead
+      return v, p
+  ```
+
+  At $\tilde x=0$ these give $\hat{\tilde V}=1,\ \hat{\tilde p}=0$ identically, *no matter what numbers `n_v`/`n_p` are* — the optimizer has no path to violate them. Hard BCs are the default (the literature shows they train cleaner in data-free regimes), which is why the loss list below usually has no $\mathcal L_{bc}$ term at all.
+
+**④ Total loss** — one Python number the optimizer actually descends:
 
 $$\mathcal{L}(\theta) = \lambda_{cont}\mathcal{L}_{cont} + \lambda_{mom}\mathcal{L}_{mom} + \lambda_{bc}\mathcal{L}_{bc} \;(+\,\lambda_{data}\mathcal{L}_{data}\ \text{if any measurements exist})$$
+
+```python
+# src/losses.py — LossWeights.total(): assembles exactly the sum above
+def total(self, model, xt_f, dtt_f, dtt_b=None, hard_bc=True):
+    l_cont = loss_continuity(model, xt_f, dtt_f)
+    l_mom = loss_momentum(model, xt_f, dtt_f)
+    parts = {"cont": l_cont, "mom": l_mom}
+    total = self.values["cont"] * l_cont + self.values["mom"] * l_mom   # lambda_cont*L_cont + lambda_mom*L_mom
+    if not hard_bc and dtt_b is not None:
+        l_bc = loss_bc_soft(model, dtt_b)
+        parts["bc"] = l_bc
+        total = total + self.values["bc"] * l_bc                        # + lambda_bc*L_bc, only in soft mode
+    return total, parts
+```
+
+`self.values` is the dict of $\lambda$'s (`{"cont": 1.0, "mom": 1.0, "bc": 1.0}` to start). `train.py` calls `total.backward()` on whatever this function returns — that's the moment §4.7's backpropagation actually fires, computing $\nabla_\theta\mathcal L$ for all 21,122 weights from this one scalar.
 
 **Loss weighting matters.** Different terms have different gradient magnitudes, and imbalanced gradients cause the optimizer to satisfy one equation while ignoring another (Wang, Teng & Perdikaris 2021, "gradient pathologies"). Two supported strategies:
 
 - `fixed`: user-set weights (Stage 1 works with all $\lambda=1$; Hong et al. found $\lambda_{mom}\approx 20$ necessary in shock cases).
-- `annealing` (default): Wang et al.'s learning-rate annealing — periodically set $\hat\lambda_i = \max|\nabla_\theta \mathcal{L}_{r}| \,/\, \overline{|\nabla_\theta \mathcal{L}_i|}$ with a 0.9 moving average. This self-balances the terms.
+- `annealing` (default): Wang et al.'s learning-rate annealing — periodically set $\hat\lambda_i = \max|\nabla_\theta \mathcal{L}_{r}| \,/\, \overline{|\nabla_\theta \mathcal{L}_i|}$ with a 0.9 moving average. This self-balances the terms. In code, `LossWeights.maybe_anneal`:
 
-**⑤ Where each piece lives in code:** ① and ② → `src/losses.py` (calling `src/physics.py` for residuals, which calls `torch.autograd.grad`); ③ → `src/networks.py` (hard transform) and `src/losses.py` (soft penalty); ④ → `src/train.py`.
+  ```python
+  def maybe_anneal(self, epoch, model, parts):
+      if self.weighting != "annealing" or epoch % self.anneal_every != 0:
+          return False
+      params = [p for p in model.parameters() if p.requires_grad]
+      ref_max, means = 0.0, {}
+      for name, loss_i in parts.items():
+          # gradient of THIS loss term w.r.t. every weight -- reuses the exact
+          # backprop machinery from §4.7, just run once per term instead of on the total
+          g = torch.autograd.grad(loss_i, params, retain_graph=True, allow_unused=True)
+          flat = torch.cat([gi.abs().flatten() for gi in g if gi is not None])
+          means[name] = flat.mean().item()
+          ref_max = max(ref_max, flat.max().item())   # max|grad L_ref|
+      for name in self.values:
+          lam_hat = ref_max / means[name]              # max|grad L_ref| / mean|grad L_i|  =  lambda_hat_i
+          a = self.anneal_alpha
+          self.values[name] = (1 - a) * self.values[name] + a * lam_hat   # 90% toward the fresh estimate
+      return True
+  ```
+
+  `train.py` calls this **before** `total.backward()`, deliberately — `backward()` frees the computation graph once it runs, and this function needs that graph alive to compute `torch.autograd.grad` on each individual term.
+
+**⑤ Where each piece lives, end to end:** ① and ② → `src/physics.py` builds the raw residual via `torch.autograd.grad`, `src/losses.py` squares and averages it; ③ → `src/networks.py`'s `forward` (hard) or `src/losses.py`'s `loss_bc_soft` (soft); ④ → `src/losses.py`'s `LossWeights.total` sums the weighted parts into one scalar, and `src/train.py`'s training loop calls `.backward()` on it every single step.
 
 ---
 
