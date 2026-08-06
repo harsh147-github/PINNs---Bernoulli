@@ -67,3 +67,47 @@ export:
   n_radial: 64                # radial points for axisymmetric .vtu reconstruction
   sweep_n: 25                 # throat diameters in parametric sweep / .mat export
   plot_dt: [0.20, 0.2833, 0.3667, 0.45]   # D_t values shown in field plots [m]
+
+# Stage 2 — compressible quasi-1D Euler (CLAUDE.md Section 6). Reuses the
+# shared `geometry:` and `physics:` blocks above (gamma, R, T_in already
+# live there); this block holds everything specific to the Stage 2 network,
+# loss, and training loop, mirroring the stage-1 blocks' structure exactly.
+stage2:
+  network:
+    n_hidden_layers: 6
+    n_neurons: 64
+    activation: tanh
+    hard_bc: true              # true: all 4 outputs hard-BC'd (softplus-shifted); false: soft penalty
+    hard_pressure_bc: true     # only consulted when hard_bc: false (Hong et al. 2023, Sec 6)
+
+  loss:
+    weighting: annealing
+    anneal_every: 500
+    anneal_alpha: 0.9
+    anneal_warmup: 500
+    lambda_cont: 1.0
+    lambda_mom: 1.0
+    lambda_energy: 1.0
+    lambda_eos: 1.0
+    lambda_bc: 1.0
+    lambda_mom_boost: false     # if true, lambda_mom is pinned (not annealed) to the value below
+    lambda_mom_boost_value: 20.0   # Hong et al. 2023, used "if residuals stall"
+
+  training:
+    n_collocation_x: 512
+    n_dt_values: 8
+    n_boundary: 64
+    resample_every: 1000
+    adam_epochs: 20000
+    adam_lr: 0.001
+    lr_decay_gamma: 0.95
+    lr_decay_every: 2000
+    log_every: 100
+    validate_every: 500
+    checkpoint_every: 5000
+    lbfgs_max_iter: 5000
+    lbfgs_history_size: 50
+    held_out_dt: [0.225, 0.275, 0.325, 0.375, 0.425]   # [m], never trained on
+
+  acceptance:
+    rel_l2: 1.0e-2             # CLAUDE.md Section 6: "Gate: rel-L2 < 1e-2" (subsonic branch)

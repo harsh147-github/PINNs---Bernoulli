@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 
 import torch
 
-from src.physics import residual_continuity, residual_momentum
+from src.physics import residual_continuity, residual_momentum, residuals_euler
 
 
 def loss_continuity(model, xt, dtt) -> torch.Tensor:
@@ -92,6 +92,88 @@ class LossWeights:
             if name in means and means[name] > 0:
                 lam_hat = ref_max / means[name]
                 lam_hat = min(max(lam_hat, 1e-3), 1e4)  # stability clip
+                a = self.anneal_alpha
+                self.values[name] = (1 - a) * self.values[name] + a * lam_hat
+        return True
+
+
+# ---------------------------------------------------------------------------
+# Stage 2 — compressible quasi-1D Euler loss (CLAUDE.md Section 6).
+#
+#   L_cont, L_mom, L_energy, L_eos = mean squared residual, one per equation
+#   L_bc (soft mode only)          = mean squared deviation from the inlet
+#                                     state (rho~=V~=p~=T~=1 at x~=0)
+#   L = lambda_cont*L_cont + lambda_mom*L_mom + lambda_energy*L_energy
+#       + lambda_eos*L_eos (+ lambda_bc*L_bc if hard_bc: false)
+#
+# `lambda_mom_boost` (config switch, Hong et al. 2023): when true, the
+# momentum weight is pinned at `lambda_mom_boost_value` (typically 20)
+# instead of being annealed, for cases where residuals stall.
+# ---------------------------------------------------------------------------
+
+
+def loss_terms_stage2(model, xt, dtt, phys_cfg: dict) -> dict:
+    """Each unweighted Stage 2 residual loss term (mean squared residual)."""
+    res = residuals_euler(model, xt, dtt, phys_cfg)
+    return {name: torch.mean(r**2) for name, r in res.items()}
+
+
+def loss_bc_soft_stage2(model, dtt_b) -> torch.Tensor:
+    """L_bc — soft inlet-condition penalty: rho~=V~=p~=T~=1 at x~=0."""
+    xt0 = torch.zeros_like(dtt_b)
+    rho, v, p, t = model(xt0, dtt_b)
+    return torch.mean((rho - 1.0) ** 2 + (v - 1.0) ** 2 + (p - 1.0) ** 2 + (t - 1.0) ** 2)
+
+
+@dataclass
+class Stage2LossWeights:
+    """Holds lambdas and implements the two weighting strategies for Stage 2."""
+
+    weighting: str = "annealing"
+    anneal_alpha: float = 0.9
+    anneal_every: int = 500
+    anneal_warmup: int = 500
+    lambda_mom_boost: bool = False
+    lambda_mom_boost_value: float = 20.0
+    values: dict = field(
+        default_factory=lambda: {"cont": 1.0, "mom": 1.0, "energy": 1.0, "eos": 1.0, "bc": 1.0}
+    )
+
+    def __post_init__(self) -> None:
+        if self.lambda_mom_boost:
+            self.values["mom"] = self.lambda_mom_boost_value
+
+    def total(
+        self, model, xt_f, dtt_f, phys_cfg: dict, dtt_b=None, hard_bc: bool = True
+    ) -> tuple[torch.Tensor, dict]:
+        """Assemble the weighted total loss. Returns (total, parts)."""
+        parts = loss_terms_stage2(model, xt_f, dtt_f, phys_cfg)
+        total = sum(self.values[name] * parts[name] for name in parts)
+        if not hard_bc and dtt_b is not None:
+            l_bc = loss_bc_soft_stage2(model, dtt_b)
+            parts["bc"] = l_bc
+            total = total + self.values["bc"] * l_bc
+        return total, parts
+
+    def maybe_anneal(self, epoch: int, model, parts: dict) -> bool:
+        """Wang et al. Algorithm 1, skipping 'mom' when lambda_mom_boost is pinned."""
+        if self.weighting != "annealing":
+            return False
+        if epoch < self.anneal_warmup or epoch % self.anneal_every != 0:
+            return False
+        params = [p for p in model.parameters() if p.requires_grad]
+        ref_max, means = 0.0, {}
+        for name, loss_i in parts.items():
+            g = torch.autograd.grad(loss_i, params, retain_graph=True, allow_unused=True)
+            flat = torch.cat([gi.abs().flatten() for gi in g if gi is not None])
+            means[name] = flat.mean().item()
+            ref_max = max(ref_max, flat.max().item())
+        for name in self.values:
+            if self.lambda_mom_boost and name == "mom":
+                continue  # pinned per Hong et al. 2023 config switch
+            if name in means and means[name] > 0:
+                lam_hat = ref_max / means[name]
+                lam_hat = min(max(lam_hat, 1e-3), 1e4)
                 a = self.anneal_alpha
                 self.values[name] = (1 - a) * self.values[name] + a * lam_hat
         return True

@@ -152,3 +152,60 @@ def make_all_figures(model, cfg: dict, history: dict, out_dir: str) -> list[Path
         plot_total_head_map(model, cfg, out_dir),
         plot_loss_history(history, out_dir),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Stage 2 figures (CLAUDE.md Section 6: "same ... visualize ... pipeline").
+# ---------------------------------------------------------------------------
+
+
+def plot_fields_vs_exact_stage2(model, cfg: dict, out_dir: str) -> Path:
+    """(rho, V, p, T) vs the exact isentropic solution, along the nozzle."""
+    from src.analytical import stage2_exact_state_si
+    from src.export import predict_si_stage2
+
+    g = cfg["geometry"]
+    x = np.linspace(0.0, g["L"], cfg["export"]["n_stations"])
+    fig, axes = plt.subplots(2, 2, figsize=(13, 9))
+    for dt_si in cfg["export"]["plot_dt"]:
+        xt, dtt = x / g["L"], np.full_like(x, dt_si / g["D_in"])
+        RHO, V, P, T = predict_si_stage2(model, cfg, xt, dtt)
+        rho_e, v_e, p_e, t_e = stage2_exact_state_si(x, dt_si, cfg)
+        for ax, pred, exact in zip(axes.flat, (RHO, V, P, T), (rho_e, v_e, p_e, t_e)):
+            (l,) = ax.plot(x, pred, label=f"$D_t$={dt_si:.3f} m")
+            ax.plot(x, exact, "--", color=l.get_color(), alpha=0.6)
+    titles = [("rho [kg/m^3]", "Density"), ("V [m/s]", "Velocity"),
+              ("p [Pa]", "Pressure"), ("T [K]", "Temperature")]
+    for ax, (ylabel, title) in zip(axes.flat, titles):
+        ax.set(xlabel="x [m]", ylabel=ylabel, title=f"{title} — PINN (solid) vs isentropic exact (dashed)")
+        ax.axvline(g["L"] / 2, color="gray", ls=":", lw=1)
+        ax.legend(fontsize=7); ax.grid(alpha=0.3)
+    fig.tight_layout()
+    path = _fig_dir(out_dir) / "stage2_fields_vs_exact.png"
+    fig.savefig(path, dpi=300)
+    plt.close(fig)
+    return path
+
+
+def plot_loss_history_stage2(history: dict, out_dir: str) -> Path:
+    """Stage 2 training curves: total + per-term losses (log scale)."""
+    fig, ax = plt.subplots(figsize=(9, 6))
+    ax.semilogy(history["epoch"], history["loss"], label="total")
+    for key, label in [("loss_cont", "$\\mathcal{L}_{cont}$"), ("loss_mom", "$\\mathcal{L}_{mom}$"),
+                        ("loss_energy", "$\\mathcal{L}_{energy}$"), ("loss_eos", "$\\mathcal{L}_{eos}$")]:
+        ax.semilogy(history["epoch"], history[key], label=label)
+    ax.set(xlabel="epoch / L-BFGS iteration", ylabel="loss (log scale)",
+           title="Stage 2 training history — Euler residual losses")
+    ax.legend(); ax.grid(alpha=0.3, which="both")
+    fig.tight_layout()
+    path = _fig_dir(out_dir) / "stage2_loss_history.png"
+    fig.savefig(path, dpi=300)
+    plt.close(fig)
+    return path
+
+
+def make_all_figures_stage2(model, cfg: dict, history: dict, out_dir: str) -> list[Path]:
+    return [
+        plot_fields_vs_exact_stage2(model, cfg, out_dir),
+        plot_loss_history_stage2(history, out_dir),
+    ]
