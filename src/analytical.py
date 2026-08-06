@@ -1,9 +1,44 @@
-"""Closed-form analytical solution — README Eq. (4), Section 3.7/3.8.
+"""FILE 2 OF 9 — The exact answer. Depends only on file 1 (geometry.py).
 
-This is the ground truth the PINN is validated against. No CFD data anywhere.
+OBJECTIVE OF THIS FILE
+-----------------------
+Write down the correct velocity and pressure at every point in the duct,
+in closed form — no network, no training, just algebra. This file is
+never used *during* training (the network never gets to see it). It
+exists purely so file 8 (evaluate.py) can grade the trained network
+honestly afterward: run the network, run this file, compare.
 
-Non-dimensional:  V~ = 1/A~,   p~ = 1 - V~^2
-SI:               V  = V_in * A_in/A,   p = p_in + 0.5*rho*(V_in^2 - V^2)
+WHY WE CAN SOLVE IT BY HAND AT ALL (full derivation: README Section 3.4-3.7)
+--------------------------------------------------------------------------------
+Two physical laws pin down the flow completely for water in this duct:
+continuity (mass in = mass out, at every cross-section) and Bernoulli's
+theorem (pressure trades off against velocity along the flow, derived from
+F=ma on a slug of fluid). Solving them together by hand:
+
+    continuity:  A(x) V(x) = A_in V_in           =>  V(x) = V_in * A_in / A(x)
+    Bernoulli:   p + 0.5 rho V^2 = p_in + 0.5 rho V_in^2
+                                                   =>  p(x) = p_in + 0.5*rho*(V_in^2 - V(x)^2)
+
+In the non-dimensional variables every other file actually trains and
+tests in (x_tilde = x/L, V_tilde = V/V_in, p_tilde = (p-p_in)/(0.5 rho
+V_in^2) — README Section 3.8), these collapse to almost nothing:
+
+    V_tilde = 1 / A_tilde(x_tilde; Dt_tilde)
+    p_tilde = 1 - V_tilde^2
+
+`velocity_exact_nondim` / `pressure_exact_nondim` below are exactly these
+two lines. Everything past this point in the file (`_si` versions,
+Stage 2) is the same idea in SI units or for the compressible case.
+
+STAGE 2 ADDITION: THE ISENTROPIC SOLUTION HAS NO CLOSED FORM
+-----------------------------------------------------------------
+Once the fluid is compressible (air, Stage 2), the analogous "solve by
+hand" step hits a wall: the isentropic area-Mach relation that replaces
+V(x) = V_in*A_in/A(x) can't be inverted algebraically for the Mach number
+— it has to be found numerically, point by point, with a root-finder
+(`scipy.optimize.brentq`, bracketed to the subsonic branch only — see the
+Stage 2 section below). That's the one place this file leaves "pure
+algebra" and calls a numerical solver instead.
 """
 
 from __future__ import annotations

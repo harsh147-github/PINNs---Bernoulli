@@ -1,9 +1,47 @@
-"""Validation against the analytical solution — README Section 10.
+"""FILE 8 OF 9 — Grading the trained network, honestly.
 
-No CFD data anywhere: ground truth is the closed-form Bernoulli solution.
-The generalization check evaluates ONLY on throat diameters the network
-never trained on (held_out_dt in config) — a memorizer fails here, a
-physics-trained surrogate passes.
+OBJECTIVE OF THIS FILE
+-----------------------
+Everything up to this point never once told the network the correct
+answer -- it only ever saw whether it violated the equations (files 3-5).
+This file is the first (and only) place file 2's exact answer
+(analytical.py) actually gets compared against the network's output.
+It's deliberately kept separate from training: if grading logic leaked
+into the loss, "the network learned the physics" and "the network
+memorized the grading points" would become impossible to tell apart.
+
+WHY GRADE ONLY ON `held_out_dt` (sampling.py's held-out throat diameters)
+-------------------------------------------------------------------------------
+This is the actual test of whether training worked. A network graded on
+throat diameters it trained on could be passing simply by memorizing
+those specific curves -- not by having learned continuity and Bernoulli
+in general. Grading exclusively on Dt values that never once appeared in
+any `lhs_collocation` draw (sampling.py) closes that loophole: the only
+way to score well here is for the governing equations to actually hold in
+the network's output, since that's the only signal it was ever given.
+
+`relative_l2` -- THE METRIC, IN PLAIN TERMS
+-----------------------------------------------
+    rel_l2 = ||prediction - exact|| / ||exact||
+
+The numerator is "how far off is the whole prediction, as one number"
+(the Euclidean length of the error vector across every validation point
+at once). Dividing by the exact solution's own length turns that into a
+*relative* error -- 1e-4 means "off by about 0.01% of the true answer's
+overall scale," independent of whatever units or magnitude V_tilde/p_tilde
+happen to be in. That's what the acceptance gates (README Section 9,
+CLAUDE.md Section 7) actually threshold against.
+
+WHAT THE THREE GATES ARE CHECKING, ONE EACH
+-------------------------------------------------
+    rel_l2_V     < 1e-3   -- does the velocity field actually match?
+    rel_l2_p     < 1e-2   -- does pressure match? (looser: p depends on V^2,
+                              so it amplifies whatever error V already has)
+    total_head   < 1%     -- is Bernoulli's constant ACTUALLY constant in
+                              the trained output, or does it drift? This is
+                              the one gate that isn't just "close to the
+                              exact solution" -- it's a direct physics
+                              self-consistency check on the network alone.
 """
 
 from __future__ import annotations

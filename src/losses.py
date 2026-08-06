@@ -1,21 +1,46 @@
-"""Loss functions and weighting strategy — README Section 5.
+"""FILE 5 OF 9 — Turning "how wrong is the physics" into the one number
+the optimizer actually descends.
 
-Each physics statement becomes ONE mean-squared-error term:
+OBJECTIVE OF THIS FILE
+-----------------------
+physics.py hands back a RESIDUAL — a raw number (well, thousands of them,
+one per collocation point) measuring how far the network's guess is from
+obeying one equation, at one point. A residual isn't a loss yet: it can be
+positive or negative, and it's evaluated at hundreds of scattered points,
+not one number. This file turns residuals into a loss:
 
-    L_cont = mean( r_cont^2 )   continuity residual  (Eq. 1)
-    L_mom  = mean( r_mom^2  )   Bernoulli/momentum residual (Eq. 2)
-    L_bc   = mean( (V~(0)-1)^2 + p~(0)^2 )   inlet BCs (Eq. 3, soft mode only)
+    L_cont = mean( r_cont^2 )   -- continuity residual, squared and averaged
+    L_mom  = mean( r_mom^2  )   -- Bernoulli/momentum residual, squared and averaged
+    L_bc   = mean( (V~(0)-1)^2 + p~(0)^2 )   -- inlet BCs (soft mode only)
 
-Total:  L = lambda_cont * L_cont + lambda_mom * L_mom + lambda_bc * L_bc
+Squaring does two jobs at once: it makes a residual of -0.3 count exactly
+as bad as +0.3 (direction of violation doesn't matter, only size), and it
+punishes large violations much harder than small ones (0.3^2=0.09 vs
+0.03^2=0.0009 -- a 10x bigger error costs 100x more loss), which pushes
+training to stamp out the worst offenders first. Averaging over all the
+collocation points (README Section 5's N_f) turns "thousands of
+per-point numbers" into the single scalar `total.backward()` needs.
 
-Weighting strategies (README Section 5, item 4):
-  - 'fixed'     : user-set lambdas from config.
-  - 'annealing' : Wang, Teng & Perdikaris (2021) learning-rate annealing,
-                  Algorithm 1. Every `anneal_every` epochs:
+Total loss the optimizer actually sees:
+
+    L = lambda_cont * L_cont + lambda_mom * L_mom + lambda_bc * L_bc
+
+WHY THE lambda WEIGHTS EXIST AT ALL
+---------------------------------------
+Continuity and momentum don't naturally produce gradients of the same
+size. Left with lambda=1 for both, the optimizer will happily drive
+whichever term has the louder gradient toward zero while quietly
+neglecting the other (Wang, Teng & Perdikaris 2021 call this a "gradient
+pathology"). Two fixes are implemented:
+
+  - 'fixed'     : you set the lambdas yourself in config and they never change.
+  - 'annealing' (default): every `anneal_every` epochs, re-measure each
+                  term's actual gradient magnitude and rebalance:
                       lambda_hat_i = max|grad L_ref| / mean|grad L_i|
                       lambda_i <- (1 - alpha) * lambda_i + alpha * lambda_hat_i
-                  with alpha = 0.9. This stops one equation's gradients from
-                  drowning out the other's ("gradient pathologies").
+                  with alpha=0.9 -- the update leans 90% toward the fresh
+                  estimate each time it fires. `maybe_anneal()` below is
+                  exactly this formula in code.
 """
 
 from __future__ import annotations

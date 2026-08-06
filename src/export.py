@@ -1,8 +1,36 @@
-"""Exports: CSV, ParaView (.vtu), MATLAB (.mat) — README Section 11.
+"""FILE 9 OF 9 — Turning a trained function into files other programs can open.
 
-The 1D surrogate field is reconstructed into a 2D axisymmetric field for
-real CFD-style visualization: at each station x the duct spans
-y in [-D(x)/2, +D(x)/2] with plug flow u(x,y) = V(x), p(x,y) = p(x).
+OBJECTIVE OF THIS FILE
+-----------------------
+By the time training (file 7) finishes, "the result" is a Python object in
+GPU memory that maps (x_tilde, Dt_tilde) -> (V_tilde, p_tilde) -- not
+something you can double-click. This file sweeps that function over a grid
+of real (x, Dt) values, converts the dimensionless output back into SI
+units, and writes three kinds of file: CSV (spreadsheet-readable), a
+ParaView `.vtu` mesh (proper 3D CFD visualization), and a MATLAB `.mat`
+(so the whole parametric sweep is a single load away, no Python required).
+
+WHY THE ParaView MESH IS 2D EVEN THOUGH THE PHYSICS IS 1D
+-----------------------------------------------------------------
+The surrogate only ever predicts one V and one p per x-station (that's
+what "quasi-1D" meant back in README Section 3.3 -- no radial variation).
+To get something that actually looks like flow through a duct in ParaView
+rather than a single line, each station is expanded into a disc: for
+every x, the duct cross-section spans y in [-D(x)/2, +D(x)/2] (D(x) from
+geometry.py), and every point on that disc is given the SAME V and p --
+"plug flow", visually honest about the fact that the model has no radial
+information to show, while still letting you see the real duct shape and
+watch V/p change along its length.
+
+WHY THE SI CONVERSION HAPPENS HERE AND NOWHERE ELSE
+-----------------------------------------------------------
+Every other file in this repo works in the dimensionless variables from
+README Section 3.8 -- V_tilde, p_tilde, x_tilde. `to_si_velocity` /
+`to_si_pressure` (geometry.py) only get called here, at the very last
+step, multiplying by V_in / rescaling by p_in, rho, V_in -- the same
+constants that never once appeared inside a loss term or a residual
+(that's *why* those constants are free to change -- water vs air, 2 m/s
+vs 10 m/s -- without retraining anything; see the README Status section).
 """
 
 from __future__ import annotations

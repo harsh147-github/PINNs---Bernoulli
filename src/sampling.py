@@ -1,11 +1,45 @@
-"""Collocation-point sampling — README Sections 7 and 9.
+"""FILE 6 OF 9 — Deciding WHERE to check the physics.
 
-Latin Hypercube Sampling over the (xt, dtt) design space
-    [0, 1] x [dtt_min, dtt_max]
-so the network sees positions AND throat diameters simultaneously — this is
-what makes the model a parametric surrogate instead of a single-case solver.
-Resampling periodically during training prevents overfitting to any fixed
-point set.
+OBJECTIVE OF THIS FILE
+-----------------------
+physics.py's residuals are only ever computed at specific points — they
+can't literally be checked at "every point" in a continuous duct. This
+file decides which points. That choice matters more than it sounds: check
+only a fixed grid and the network can quietly overfit to exactly those
+points while still being wrong everywhere else; check too few and you
+waste the physics equations' free supervision (README Section 4.4).
+
+WHY LATIN HYPERCUBE SAMPLING, NOT A REGULAR GRID
+------------------------------------------------------
+`lhs_collocation` draws random points over the 2D box
+    [0, 1] (x_tilde) x [dtt_min, dtt_max] (Dt_tilde)
+using Latin Hypercube Sampling (LHS) rather than either a regular grid or
+plain uniform-random points. LHS guarantees the samples are spread evenly
+across both axes (no accidental clumping the way pure-random sampling can
+produce, and no rigid repeating pattern the way a grid does) while still
+being randomized every time it's called with a new seed. Both position
+AND throat diameter are sampled together, every draw — this is *the*
+mechanical reason one trained network becomes a parametric surrogate
+instead of a solver for one fixed geometry: it never sees just one Dt,
+it sees the whole design space simultaneously, every single training step.
+
+WHY RESAMPLE PERIODICALLY (`resample_every` in train.py)
+---------------------------------------------------------------
+If the network only ever gets graded at the same 4,096 fixed points, nothing
+stops it from becoming very good at exactly those points while still
+being wrong in between them. `train.py` calls `lhs_collocation` again
+every `resample_every` epochs with a new seed, so over the course of
+training the network has been checked at many different random point
+sets — good performance can no longer hide between a fixed grid's cracks.
+
+WHY 5 THROAT DIAMETERS ARE HELD OUT ENTIRELY (`validation_grid`)
+-----------------------------------------------------------------------
+`held_out_dt` in the config (0.225, 0.275, 0.325, 0.375, 0.425 m) are
+excluded from every `lhs_collocation` draw for the whole run — the
+network is never trained on them. `evaluate.py` grades exclusively on
+these. A network that merely memorized the training geometries would
+fail there; one that actually learned the underlying equations doesn't
+care that it's a "new" Dt, because the equations hold for every Dt.
 """
 
 from __future__ import annotations

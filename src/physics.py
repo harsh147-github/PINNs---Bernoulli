@@ -1,15 +1,66 @@
-"""THE equations-to-code file — README Section 5.
+"""FILE 3 OF 9 — THE CORE TRICK. Everything before this file was ordinary
+code: geometry is arithmetic, analytical.py is algebra. This file is where
+"neural network" and "differential equation" actually meet, and it's the
+one idea that makes a PINN a PINN rather than a curve-fitter.
 
-Every residual below is one governing equation written as `torch` code.
-Derivatives are exact: torch.autograd.grad differentiates the network's
-output through its own computational graph (machine precision, no mesh,
-no finite differences). create_graph=True keeps the derivative itself
-differentiable so backpropagation can reach the weights.
+OBJECTIVE OF THIS FILE
+-----------------------
+Take a candidate answer (the network's current guess, however bad it is)
+and compute exactly how badly it violates each governing equation, at a
+set of points. That "how badly" number is called a RESIDUAL, and it's
+what file 5 (losses.py) squares and averages into the number the
+optimizer actually descends.
 
-Stage 1 (README Eq. 5):
-    continuity : r_cont = d/dxt [ A~(xt,dtt) * V~ ]            = 0
-    momentum   : r_mom  = d/dxt [ p~ + V~^2 ]                  = 0
-                 (differential form of Bernoulli's theorem)
+THE IDEA IN ONE SENTENCE
+--------------------------
+Continuity (README Eq. 1) says d/dx[A(x)V(x)] = 0 — the SLOPE of that
+product must be zero everywhere. To check that on a *guess* V(x), you
+need dV/dx of that guess. If the guess comes from a neural network, that
+"guess" is a big pile of matrix multiplies and tanh calls (networks.py) —
+and asking "what's the slope of the output of a big pile of arithmetic,
+with respect to one of its inputs" is *exactly* what `torch.autograd.grad`
+computes, exactly, not approximately, by mechanically applying the chain
+rule backward through every operation PyTorch recorded during the forward
+pass (README Section 4.5-4.6). That's the whole trick. No finite
+differences, no mesh, no approximation — the literal calculus derivative
+of the network's own output.
+
+WHAT A RESIDUAL LOOKS LIKE IN CODE, STEP BY STEP
+----------------------------------------------------
+Take `residual_continuity` below apart:
+
+    xt = xt.requires_grad_(True)      # (1) tell PyTorch to start recording
+                                       #     operations on xt -- without this,
+                                       #     line (4) has nothing to differentiate
+    v, _ = model(xt, dtt)             # (2) forward pass (networks.py) -- the
+                                       #     network's CURRENT guess at V_tilde
+    flux = area_nondim(xt, dtt) * v   # (3) build A_tilde * V_tilde -- geometry.py's
+                                       #     function, still tracked, still differentiable
+    return _grad(flux, xt)            # (4) d(flux)/d(xt) -- the actual residual r_cont
+
+If the network's guess happened to be *exactly* the true solution
+(analytical.py), this would return zero at every point — that's
+literally what `tests/test_analytical.py` checks, to machine precision.
+Early in training it will be some nonzero number; squaring and averaging
+many of these (losses.py) is the loss the network is trained to shrink.
+
+`create_graph=True` INSIDE `_grad` — the one flag that would silently
+break everything if forgotten
+--------------------------------------------------------------------------
+We're not done differentiating once we have r_cont. `losses.py` squares
+it into a loss term, and then `train.py` calls `.backward()` on the total
+loss to get the gradient *with respect to the network's weights* — a
+SECOND differentiation, one level up from what happened here.
+`create_graph=True` is what keeps this first derivative (r_cont) itself
+differentiable, so that second backward pass has something to walk
+through. Drop it, and training silently fails at the first `.backward()`
+call with no useful error pointing back to this line.
+
+STAGE 1 RESIDUALS (README Eq. 5)
+------------------------------------
+    continuity : r_cont = d/dx_tilde [ A_tilde(x_tilde,Dt_tilde) * V_tilde ]   = 0
+    momentum   : r_mom  = d/dx_tilde [ p_tilde + V_tilde^2 ]                    = 0
+                 (differential, integrated form of Bernoulli's theorem)
 """
 
 from __future__ import annotations

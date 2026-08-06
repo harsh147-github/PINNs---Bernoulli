@@ -1,10 +1,28 @@
-"""Figures — README Sections 10 and 11.
+"""Companion to export.py (also "file 9" in the reading order) — the same
+trained function, turned into pictures instead of data files. If you only
+read one output file to check "did this actually work," make it
+`results/figures/fields_vs_exact.png` from `plot_fields_vs_exact` below:
+solid = the trained network, dashed = analytical.py's exact answer. If
+those two lines aren't on top of each other, nothing else in the repo
+matters yet.
 
-(a) V(x), p(x): PINN vs analytical for several throat diameters
-(b) throat quantities vs throat diameter (the parametric design sweep)
-(c) colored CFD-style 2D field in the actual nozzle shape
-(d) total-head (Bernoulli invariant) error map over (x, Dt)
-(e) training loss history, per term, log scale
+Five figures, each answering one specific question:
+
+(a) `plot_fields_vs_exact`   -- does V(x), p(x) match the exact solution,
+                                  point by point, for several throat sizes?
+(b) `plot_throat_sweep`      -- does the surrogate reproduce the right
+                                  TREND as the design parameter (throat
+                                  diameter) changes, not just one geometry?
+(c) `plot_colored_field`     -- what does this actually look like as a
+                                  flow field (the axisymmetric reconstruction
+                                  export.py builds)?
+(d) `plot_total_head_map`    -- is Bernoulli's invariant (p_tilde + V_tilde^2)
+                                  actually constant everywhere in (x, Dt)
+                                  space, or does it drift in some corner of
+                                  the design space training didn't cover well?
+(e) `plot_loss_history`      -- log-scale view of every loss term over
+                                  training -- the actual descent from files 5/7,
+                                  visualized.
 """
 
 from __future__ import annotations

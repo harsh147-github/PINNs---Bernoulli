@@ -1,8 +1,50 @@
-"""Training loop — README Section 9.
+"""FILE 7 OF 9 — The training loop. Everything in files 1-6 was building
+blocks; this file is where they actually run, thousands of times, and the
+network's random-garbage weights slowly turn into a working surrogate.
 
-Phase 1: Adam (robust bulk training), with periodic collocation resampling,
-         loss-weight annealing, logging, validation, checkpointing.
-Phase 2: L-BFGS (quasi-Newton polish to drive residuals to floor).
+OBJECTIVE OF THIS FILE
+-----------------------
+Repeat this cycle until the loss is small (README Section 4.7 explains
+each step conceptually; this is that same cycle as real code):
+
+    1. forward pass    -- model(xt, dtt) -> current guess (networks.py)
+    2. residuals        -- how wrong is that guess, physically? (physics.py)
+    3. loss              -- one scalar summarizing all the wrongness (losses.py)
+    4. backward pass    -- loss.backward() -> gradient for all ~21,000 weights
+    5. optimizer step  -- nudge every weight slightly downhill
+    6. repeat
+
+That six-line cycle, unmodified, run 20,000 times, IS Stage 1 training.
+Everything else in this file (resampling, annealing, logging,
+checkpointing) is instrumentation wrapped around that one loop so you can
+watch it happen and recover a trained model afterward.
+
+TWO OPTIMIZERS, TWO JOBS (full reasoning: README Section 4.7)
+--------------------------------------------------------------------
+  Phase 1 -- Adam.  Adapts its own step size per weight and remembers a
+  running average of recent gradients, which makes it robust to the
+  wildly uneven, initially chaotic loss landscape a freshly-initialized
+  network starts on. Runs for `adam_epochs` (20,000) full-batch steps,
+  learning rate decaying x0.95 every `lr_decay_every` (2,000) epochs. It
+  does the bulk of the work and gets the loss most of the way down.
+
+  Phase 2 -- L-BFGS.  A quasi-Newton method: once Adam has found the
+  right neighbourhood, L-BFGS uses *curvature* (how the gradient itself
+  is changing, not just its current value) to take far more precise
+  steps, squeezing the loss down another 1-2 orders of magnitude where
+  Adam stalls. More expensive per step (it needs several forward/backward
+  evaluations per iteration for its internal line search), which is
+  exactly why it only runs for the last `lbfgs_max_iter` (5,000) iterations
+  instead of the whole run.
+
+WHAT `weights.maybe_anneal(...)` IS DOING RIGHT BEFORE `.backward()`
+-------------------------------------------------------------------------
+Look at the order in the Adam loop below: `maybe_anneal` runs BEFORE
+`total.backward()`, not after. This is deliberate, not arbitrary --
+`maybe_anneal` (losses.py) needs to call `torch.autograd.grad` on each
+individual loss term to measure its gradient size, and that only works
+while the computation graph is still alive. `backward()` frees that graph
+once it runs. Swap the order and annealing silently breaks.
 """
 
 from __future__ import annotations

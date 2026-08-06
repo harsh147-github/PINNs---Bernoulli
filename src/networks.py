@@ -1,15 +1,52 @@
-"""Network architecture — README Section 6.
+"""FILE 4 OF 9 — The network itself: the thing whose guesses physics.py
+grades and losses.py/train.py improve.
 
-PINN(xt, dtt) -> (V~, p~)
+OBJECTIVE OF THIS FILE
+-----------------------
+Build `PINN(xt, dtt) -> (V_tilde, p_tilde)`: a function with ~21,000
+trainable numbers that starts out as random garbage and, after training,
+approximates the true flow (analytical.py) everywhere in the design space.
 
-Fully connected MLP: 2 inputs -> K hidden layers of N neurons (tanh) -> 2 raw
-outputs. Boundary conditions are HARD-WIRED into the output transform
-(README Section 5, item 3; Lagaris 1998 / Sun et al. 2020):
+WHAT A SINGLE NEURON COMPUTES (full worked numeric example: README Section 4.1)
+------------------------------------------------------------------------------------
+One neuron: multiply each input by its own weight, add them plus a bias,
+squash the result through a nonlinear function:
 
-    V~(xt) = 1 + xt * N_V(xt, dtt)      =>  V~(0) = 1  identically
-    p~(xt) =     xt * N_p(xt, dtt)      =>  p~(0) = 0  identically
+    z = w1*x1 + w2*x2 + b,   output = tanh(z)
 
-The optimizer literally cannot violate the inlet conditions.
+That's it — no neuron does anything more exotic than that. A LAYER is many
+of these run side by side on the same input, each with its own weights; a
+NETWORK is layers chained so one layer's output is the next layer's
+input. This one is 2 inputs -> 6 layers of 64 neurons (tanh) -> 2 raw
+outputs (see `raw()` below — it's the forward pass, README Section 4.2,
+written exactly as the nested-function formula there).
+
+WHY tanh AND NOT ReLU (the popular default everywhere else in deep learning)
+---------------------------------------------------------------------------------
+`physics.py` differentiates this network's *output*, and the loss built
+from that differentiates it *again* (through backprop). tanh is a smooth
+S-curve with a well-defined slope at every order, everywhere. ReLU has a
+sharp corner at zero where its second derivative doesn't exist — for an
+ordinary classifier that's fine, but here that corner would poison the
+physics residual, which is literally built from a derivative of this
+network's output.
+
+THE HARD-BOUNDARY-CONDITION TRICK (why it's *architecture*, not a rule)
+---------------------------------------------------------------------------
+The inlet condition (README Eq. 3) says V_tilde(0)=1, p_tilde(0)=0. The
+laziest way to enforce that is a loss penalty ("please be close to 1 at
+x=0") — but a penalty is a suggestion the optimizer can trade off against
+other goals. Instead, `forward()` below bakes the condition into the
+algebra itself (Lagaris 1998 / Sun et al. 2020):
+
+    V_tilde(x) = 1 + x_tilde * N_V(x_tilde, Dt_tilde)      =>  V_tilde(0) = 1 + 0 = 1, always
+    p_tilde(x) =     x_tilde * N_p(x_tilde, Dt_tilde)      =>  p_tilde(0) = 0,         always
+
+No matter what garbage number the raw network `N_V`/`N_p` outputs, at
+x_tilde=0 the `x_tilde * (...)` term is exactly zero — there is no
+combination of weights that can make this violate the inlet condition.
+That's what "hard" means here: not enforced by training, guaranteed by
+the shape of the function itself.
 """
 
 from __future__ import annotations

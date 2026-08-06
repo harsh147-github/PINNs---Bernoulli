@@ -14,6 +14,26 @@ This repository contains a fully runnable, parametric PINN-based CFD surrogate. 
 
 ---
 
+## How to read this codebase, in order
+
+This README teaches the theory (§1–§7 below). The **source files themselves** are written as the same lesson in code — each one's module docstring states its objective, the theory it needs (self-contained, no README flipping required), and how it fits with the file before and after it. Read them in this exact order; each one only depends on the ones above it:
+
+| # | File | You will understand |
+|---|---|---|
+| 1 | [`src/geometry.py`](src/geometry.py) | The duct shape as differentiable code — no network, no physics yet |
+| 2 | [`src/analytical.py`](src/analytical.py) | The exact answer (closed-form + isentropic) — the "no CFD data needed" ground truth |
+| 3 | [`src/physics.py`](src/physics.py) | **The core trick**: turning a differential equation into a checkable number via `torch.autograd.grad` |
+| 4 | [`src/networks.py`](src/networks.py) | The network itself — forward pass, and the hard-boundary-condition architecture trick |
+| 5 | [`src/losses.py`](src/losses.py) | Turning physics violations into the one scalar the optimizer descends |
+| 6 | [`src/sampling.py`](src/sampling.py) | Deciding *where* to check the physics, and how held-out throat sizes prove generalization |
+| 7 | [`src/train.py`](src/train.py) | The actual training loop — Adam then L-BFGS, running everything above thousands of times |
+| 8 | [`src/evaluate.py`](src/evaluate.py) | Grading the trained network honestly against file #2's exact answer |
+| 9 | [`src/export.py`](src/export.py) / [`src/visualize.py`](src/visualize.py) | Turning the trained function into CSV/ParaView/MATLAB/PNG output |
+
+Stage 2 (compressible air) reuses this exact same skeleton — its additions live in the same files, clearly marked with a `# Stage 2 —` banner comment, so you can read Stage 1 first without any Stage 2 code in the way, then read the Stage 2 banners as a second pass once Stage 1 makes sense.
+
+---
+
 ## Table of Contents
 
 1. [Why this project exists](#1-why-this-project-exists)
