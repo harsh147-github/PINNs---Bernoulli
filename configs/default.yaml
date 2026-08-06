@@ -1,0 +1,69 @@
+# PINNs-Bernoulli — master configuration. No magic numbers in code; everything lives here.
+
+seed: 1234
+stage: 1                      # 1 = incompressible Bernoulli, 2 = compressible quasi-1D Euler
+
+geometry:
+  L: 3.0                      # nozzle length [m]
+  D_in: 0.5                   # inlet/outlet diameter [m]
+  dt_min: 0.20                # throat diameter range [m]  (parametric design space)
+  dt_max: 0.45
+  # D(x; Dt) = D_in + (Dt - D_in) * sin^2(pi x / L), throat at x = L/2
+
+physics:
+  rho: 1.225                  # density [kg/m^3] (air, incompressible assumption)
+  V_in: 10.0                  # inlet velocity [m/s]
+  p_in: 101325.0              # inlet pressure [Pa]
+  gamma: 1.4                  # stage 2 only
+  R: 287.0                    # stage 2 only [J/(kg K)]
+  T_in: 300.0                 # stage 2 only [K]
+
+network:
+  n_hidden_layers: 6
+  n_neurons: 64
+  activation: tanh            # tanh | sin
+  hard_bc: true               # true: BCs baked into output transform; false: soft penalty loss
+  fourier_features: false
+  fourier_scale: 2.0
+  fourier_n_freqs: 16
+
+loss:
+  weighting: annealing        # annealing | fixed   (Wang et al. 2021 learning-rate annealing)
+  anneal_every: 500
+  anneal_alpha: 0.9           # lambda <- (1-alpha)*lambda + alpha*lambda_hat
+  anneal_warmup: 500          # epochs before first annealing update
+  lambda_cont: 1.0            # used when weighting: fixed (and as initial values)
+  lambda_mom: 1.0
+  lambda_bc: 1.0
+  lambda_data: 0.0            # stub for future measurement assimilation
+
+training:
+  n_collocation_x: 512        # -> n_collocation_x * n_dt_values LHS points
+  n_dt_values: 8
+  n_boundary: 64              # only used when hard_bc: false
+  resample_every: 1000
+  adam_epochs: 20000
+  adam_lr: 0.001
+  lr_decay_gamma: 0.95
+  lr_decay_every: 2000
+  log_every: 100
+  validate_every: 500
+  checkpoint_every: 5000
+  lbfgs_max_iter: 5000
+  lbfgs_history_size: 50
+  live_dashboard: false        # true = save learning-dashboard frames during training
+  frame_every: 200             # dashboard frame interval [epochs]
+  live_display: false          # true = interactive window (your laptop); false = save PNG frames
+  # held-out throat diameters [m] used ONLY for validation (never trained on)
+  held_out_dt: [0.225, 0.275, 0.325, 0.375, 0.425]
+
+acceptance:                   # the run is only "done" when these pass
+  rel_l2_V: 1.0e-3
+  rel_l2_p: 1.0e-2
+  total_head_tol: 0.01        # |p~ + V~^2 - 1| < 1% everywhere
+
+export:
+  n_stations: 201             # axial stations for fields/exports
+  n_radial: 64                # radial points for axisymmetric .vtu reconstruction
+  sweep_n: 25                 # throat diameters in parametric sweep / .mat export
+  plot_dt: [0.20, 0.2833, 0.3667, 0.45]   # D_t values shown in field plots [m]
