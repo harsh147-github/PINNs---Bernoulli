@@ -1,8 +1,16 @@
 # PINNs-Bernoulli
 
-**A Physics-Informed Neural Network (PINN) surrogate solver for computational fluid dynamics, built from scratch, taught from scratch — using the converging–diverging nozzle and Bernoulli's theorem as the complete worked example.**
+**A Physics-Informed Neural Network (PINN) surrogate solver for computational fluid dynamics, built from scratch, taught from scratch — using water flowing through a converging–diverging venturi and Bernoulli's theorem as the complete worked example.**
 
-This repository contains (or, via `CLAUDE.md`, generates) a fully runnable, parametric PINN-based CFD surrogate. It predicts velocity and pressure fields through a converging–diverging nozzle **without a mesh, without a CFD solver, and without any CFD training data** — the governing equations themselves are the training signal. The throat diameter is a network input, so a single trained model answers: *"what happens to the flow if I change the throat diameter?"* in milliseconds.
+This repository contains a fully runnable, parametric PINN-based CFD surrogate. It predicts velocity and pressure fields as water flows through a converging–diverging duct **without a mesh, without a CFD solver, and without any CFD training data** — the governing equations themselves are the training signal. The throat diameter is a network input, so a single trained model answers: *"what happens to the flow if I narrow the throat?"* in milliseconds. Stage 2 extends the same approach to compressible air flow (quasi-1D Euler) for when the incompressible assumption stops holding.
+
+## Status (verified against the code in this repo, not aspirational)
+
+- **Stage 1 (incompressible, water) — trained and passing all three acceptance gates**, on an RTX 3060, seed 1234:
+  rel-L2(Ṽ) = **1.03×10⁻⁴** (gate < 1e-3) · rel-L2(p̃) = **2.33×10⁻⁴** (gate < 1e-2) · max Bernoulli-invariant error = **3.4×10⁻²%** (gate < 1%) — all on throat diameters held out of training.
+- **Stage 2 (compressible Euler, air) — code complete and smoke-tested**, full 20k-epoch training run not yet executed.
+- 7/7 tests pass (`pytest tests/ -q`): the 6 original Stage 1 tests plus one new Stage 2 physics sanity check.
+- A CUDA device-mismatch bug (fresh CPU tensors passed to a GPU-resident model) was found and fixed in `evaluate.py`, `physics.py`, and `export.py` while verifying training actually ran on this machine's GPU — see §9.1 below.
 
 ---
 
@@ -86,7 +94,9 @@ $$D(x; D_t) = D_{in} + (D_t - D_{in})\sin^2\!\left(\frac{\pi x}{L}\right), \qqua
 
 Cross-sectional area: $A(x; D_t) = \dfrac{\pi}{4}D(x;D_t)^2$.
 
-**Default values:** $D_{in} = 0.5\,\text{m}$, parametric range $D_t \in [0.2,\ 0.45]\,\text{m}$, fluid = air treated as incompressible at $\rho = 1.225\,\text{kg/m}^3$, inlet velocity $V_{in} = 10\,\text{m/s}$, inlet pressure $p_{in} = 101{,}325\,\text{Pa}$.
+**Default values:** $D_{in} = 0.5\,\text{m}$, parametric range $D_t \in [0.2,\ 0.45]\,\text{m}$, fluid = **water** at $\rho = 998\,\text{kg/m}^3$ (20°C, incompressible), inlet velocity $V_{in} = 2\,\text{m/s}$, inlet pressure $p_{in} = 101{,}325\,\text{Pa}$ (atmospheric reference). Stage 2 (§3.6) instead models compressible **air**, since that's the regime where compressibility actually matters.
+
+> **Any incompressible, inviscid fluid works here, not just water.** $\rho$, $V_{in}$, and $p_{in}$ never appear inside the residuals the network is trained against (§3.5) — they only rescale the network's dimensionless output back into SI units at export time. The trained network itself is fluid-agnostic; swapping the config from air to water (or any other density) requires no retraining, only re-running the SI conversion.
 
 ### 3.3 Stage 1 physics — the exact equations the PINN must satisfy
 
@@ -279,7 +289,11 @@ PINNs---Bernoulli/
 5. **Validate** every 500 epochs against the analytical solution on 10,000 fresh points; track relative $L^2$ for $\tilde V$ and $\tilde p$.
 6. **Acceptance gates** (the run is only "done" when): rel-$L^2(\tilde V) < 10^{-3}$, rel-$L^2(\tilde p) < 10^{-2}$ (pressure is more sensitive — it scales with $\tilde V^2$), Bernoulli constant variation < 1% across the domain, for **all** sampled $\tilde D_t$, including values never seen in training (interpolation check).
 
-Expected wall time: minutes on CPU, under a minute on a modest GPU.
+Measured wall time on an RTX 3060: ~12 minutes for the 20,000-epoch Adam phase, ~5–6 minutes for the L-BFGS polish — call it 15–18 minutes end to end, including exports and figures. (The network is tiny — 21,122 parameters — so a GPU's advantage here is real but modest; expect low tens of minutes on CPU too.)
+
+### 9.1 A bug found while verifying on GPU
+
+`evaluate.py`'s `validate_held_out`/`full_report`, `physics.py`'s `total_head`, and `export.py`'s `predict_si` all built fresh input tensors with plain `torch.as_tensor(...)` (which defaults to CPU) and called the model directly. That's silent on a CPU-only machine but fatal — `RuntimeError: Expected all tensors to be on the same device` — the moment the model lives on a CUDA device, since PyTorch refuses to multiply a CPU tensor against CUDA weights. Fixed by moving inputs to `next(model.parameters()).device` right before each model call and moving results back to CPU right after, at each of the three call sites. Training/loss math is unchanged — this only touches how validation and export reach the model.
 
 ---
 
@@ -290,6 +304,8 @@ Three independent checks, all automated:
 - **Pointwise fields:** $\hat{\tilde V}(\tilde x)$ vs $1/\tilde A(\tilde x)$, $\hat{\tilde p}(\tilde x)$ vs $1 - \tilde V^2$ — overlay plots for several $D_t$.
 - **Invariant check:** $\hat{\tilde p} + \hat{\tilde V}^2 \equiv 1$ (total head constancy) plotted as a map over $(\tilde x, \tilde D_t)$.
 - **Generalization:** hold out $D_t = 0.225, 0.275, 0.325, 0.375, 0.425$ m from training; evaluate only on them. A surrogate that memorizes training geometries fails here; a physics-trained one passes, because the *equations* hold everywhere.
+
+**Actual result of the reference training run** (seed 1234, RTX 3060, config as committed): rel-$L^2(\tilde V) = 1.03\times10^{-4}$, rel-$L^2(\tilde p) = 2.33\times10^{-4}$, max Bernoulli-invariant error $= 3.4\times10^{-4}$ (0.034%) — all three gates pass with roughly a 10× margin, on throat diameters never seen during training.
 
 ---
 
@@ -311,7 +327,7 @@ The 1D surrogate field is reconstructed into a **2D axisymmetric field** for rea
 git clone https://github.com/harsh147-github/PINNs---Bernoulli.git
 cd PINNs---Bernoulli
 python -m venv .venv && source .venv/bin/activate     # or conda
-pip install -r requirements.txt                        # torch, numpy, scipy, matplotlib, pyvista, pyyaml, pandas, tqdm
+pip install -r requirements.txt                        # torch, numpy, scipy, matplotlib, pyvista, pyyaml, pandas, tqdm, imageio
 
 python scripts/run_stage1_bernoulli.py --config configs/default.yaml   # train the Bernoulli surrogate
 python scripts/run_stage2_compressible.py --config configs/default.yaml # compressible extension
@@ -359,8 +375,9 @@ Annotated map of the field this repo stands on — every claim in this README tr
 
 ## 14. Roadmap
 
-- [x] Stage 1 — parametric incompressible Bernoulli surrogate (this repo's core)
-- [x] Stage 2 — quasi-1D compressible Euler (subsonic branch)
+- [x] Stage 1 — parametric incompressible Bernoulli surrogate (trained, all acceptance gates pass — §9.1, §10)
+- [x] Stage 2 — quasi-1D compressible Euler code (network, residuals, isentropic validation, training loop, run script) — smoke-tested, **full 20k-epoch training run + gate confirmation still pending**
+- [ ] Stage 2 — ParaView `.vtu` / MATLAB `.mat` export parity with Stage 1 (currently CSV + figures only)
 - [ ] Stage 2b — shock capturing (weighted loss + hard pressure constraints, per Hong et al. / WHC-PINN)
 - [ ] Stage 0 — 2D incompressible Navier–Stokes nozzle (NSFnets VP formulation, `sin` activations)
 - [ ] Data assimilation mode — inject sparse pressure-tap measurements (`λ_data` term already stubbed)
