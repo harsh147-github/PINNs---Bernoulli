@@ -1,0 +1,85 @@
+# configs/default.yaml
+# Every number used anywhere in training/physics lives here (CLAUDE.md Section 9: "no magic
+# numbers in code"). Sections mirror CLAUDE.md Sections 3-6.
+
+seed: 1234
+stage: 1                      # 1 = incompressible Bernoulli, 2 = compressible quasi-1D Euler
+device: auto                  # auto | cpu | cuda
+
+geometry:
+  L: 3.0                      # nozzle length [m]
+  D_in: 0.5                   # inlet/outlet diameter [m]
+  Dt_min: 0.20                # throat diameter range [m]  (SI)
+  Dt_max: 0.45
+  Dt_nondim_min: 0.4          # Dt / D_in
+  Dt_nondim_max: 0.9
+
+physics:
+  rho: 1.225                  # kg/m^3, air at sea level (Stage 1 incompressible density)
+  V_in: 10.0                  # m/s
+  p_in: 101325.0              # Pa
+  T_in: 300.0                 # K  (Stage 2 reference)
+  gamma: 1.4                  # air ratio of specific heats (Stage 2)
+  R: 287.0                    # J/(kg K), specific gas constant for air (Stage 2)
+
+network:
+  n_inputs: 2                 # (x_tilde, Dt_tilde)
+  n_outputs_stage1: 2         # (V_tilde_hat, p_tilde_hat)
+  n_outputs_stage2: 4         # (rho_tilde_hat, V_tilde_hat, p_tilde_hat, T_tilde_hat)
+  hidden_layers: 6
+  hidden_neurons: 64
+  activation: tanh            # tanh | sin  (sin = SIREN-style, C-infinity either way)
+  init: xavier_uniform
+  hard_bc: true                # true: bake BCs into output transform; false: soft penalty loss
+  fourier_features: false      # optional Fourier input embedding (off by default for Stage 1)
+  fourier_scale: 2.0
+  fourier_n_frequencies: 16
+
+loss:
+  loss_weighting: annealing    # annealing | fixed
+  annealing_every: 500         # epochs between lambda recomputation
+  annealing_alpha: 0.9         # moving-average coefficient (Wang et al. Algorithm 1)
+  annealing_lambda_min: 0.1    # clip raw lambda_hat before the EMA update (prevents blow-up)
+  annealing_lambda_max: 100.0
+  lambda_cont: 1.0
+  lambda_mom: 1.0
+  lambda_bc: 1.0
+  lambda_data: 0.0             # stub; no measurement data in v1
+  stage2_lambda_mom_boost: 20.0   # per Hong et al. 2023, exposed as a config switch
+  # Hong et al. 2023 also uses a hard *pressure-only* BC as a shock-capturing aid.
+  # Our Stage 2 hard-BC ansatz (networks.py) enforces rho/V/p/T together as one
+  # unit under network.hard_bc, so this flag is a placeholder for a future
+  # pressure-only ansatz rather than an independently wired switch today.
+  stage2_hard_pressure_bc: true
+
+sampling:
+  n_collocation_x: 512
+  n_dt_values: 8
+  resample_every: 1000          # epochs
+  n_boundary: 64                 # only used when hard_bc: false
+  n_validation: 2000
+  validation_dt_holdout:         # SI meters, held out of training LHS grid
+    - 0.225
+    - 0.275
+    - 0.325
+    - 0.375
+    - 0.425
+
+training:
+  optimizer_adam:
+    lr: 1.0e-3
+    epochs: 20000
+    lr_decay_gamma: 0.95
+    lr_decay_every: 2000
+  optimizer_lbfgs:
+    max_iter: 5000
+    history_size: 50
+    line_search_fn: strong_wolfe
+    tolerance_grad: 1.0e-9
+  log_every: 100
+  checkpoint_every: 5000
+
+export:
+  n_dt_sweep: 25
+  n_radial_points: 64            # axisymmetric reconstruction, points across D(x)
+  results_dir: results
