@@ -41,6 +41,11 @@ def main() -> None:
 
     cfg = yaml.safe_load(Path(args.config).read_text())
     cfg["stage"] = 2
+    # Stage 2 (air) needs its own inlet velocity, independent of Stage 1's
+    # (water) V_in in cfg["physics"] -- see configs/default.yaml's stage2.physics
+    # comment. Every downstream call (train_stage2, evaluate, export, visualize)
+    # receives this same cfg object, so overriding it once here is sufficient.
+    cfg["physics"]["V_in"] = cfg["stage2"]["physics"]["V_in"]
     if args.adam_epochs is not None:
         cfg["stage2"]["training"]["adam_epochs"] = args.adam_epochs
     if args.lbfgs_iter is not None:

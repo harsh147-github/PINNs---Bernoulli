@@ -11,10 +11,10 @@ geometry:
   # D(x; Dt) = D_in + (Dt - D_in) * sin^2(pi x / L), throat at x = L/2
 
 physics:
-  rho: 1.225                  # density [kg/m^3] (air, incompressible assumption)
-  V_in: 10.0                  # inlet velocity [m/s]
-  p_in: 101325.0              # inlet pressure [Pa]
-  gamma: 1.4                  # stage 2 only
+  rho: 998.0                  # density [kg/m^3] (water @ 20C, Stage 1 incompressible-flow fluid)
+  V_in: 2.0                   # inlet velocity [m/s] (typical pipe-flow water speed)
+  p_in: 101325.0              # inlet pressure [Pa] (atmospheric reference)
+  gamma: 1.4                  # stage 2 only (compressible Euler uses air, not water)
   R: 287.0                    # stage 2 only [J/(kg K)]
   T_in: 300.0                 # stage 2 only [K]
 
@@ -69,10 +69,19 @@ export:
   plot_dt: [0.20, 0.2833, 0.3667, 0.45]   # D_t values shown in field plots [m]
 
 # Stage 2 — compressible quasi-1D Euler (CLAUDE.md Section 6). Reuses the
-# shared `geometry:` and `physics:` blocks above (gamma, R, T_in already
-# live there); this block holds everything specific to the Stage 2 network,
-# loss, and training loop, mirroring the stage-1 blocks' structure exactly.
+# shared `geometry:` block above; gamma, R, T_in, p_in live in the shared
+# `physics:` block too since they're reasonable for both fluids (or, for
+# gamma/R/T_in, only meaningful for Stage 2 anyway). V_in is deliberately
+# NOT shared: physics.V_in is water's ~2 m/s pipe speed (Stage 1), and
+# reusing it here would make Stage 2's momentum-residual scaling factor
+# kappa = p_in/(rho_in*V_in^2) blow up to ~21,500 (rho_in is air's ~1.18
+# kg/m^3, not water's) -- exactly the kind of loss-term scale mismatch
+# that stalls the annealing scheme. Stage 2 needs its own, physically
+# sensible subsonic air inlet speed.
 stage2:
+  physics:
+    V_in: 10.0                # inlet air speed [m/s] -> M_in ~ 0.029 at T_in=300K, safely subsonic
+
   network:
     n_hidden_layers: 6
     n_neurons: 64
