@@ -54,7 +54,7 @@ $\tilde x=x/L,\ \tilde A=A/A_{in},\ \tilde D_t=D_t/D_{in}\in[0.4,0.9],\ \tilde V
 
 $$\mathcal L=\lambda_{cont}\mathcal L_{cont}+\lambda_{mom}\mathcal L_{mom}+\lambda_{bc}\mathcal L_{bc}+\lambda_{data}\mathcal L_{data}\ (\text{stub}=0)$$
 Each term = mean of squared residuals over its point set. Residuals computed with `torch.autograd.grad(..., create_graph=True)` — **never finite differences inside training**.
-Weighting (`loss_weighting: annealing|fixed`): default `annealing` = Wang et al. learning-rate annealing, recomputed every 500 epochs: $\hat\lambda_i=\max_\theta|\nabla_\theta\mathcal L_{r}|/\overline{|\nabla_\theta\mathcal L_i|}$, then update with moving average per the original Algorithm 1: $\lambda_i\leftarrow(1-\alpha)\lambda_i+\alpha\hat\lambda_i$ with $\alpha=0.1$ (i.e. 90% weight on the running value, 10% on the fresh estimate — verify against the paper's Algorithm 1 before coding). When `hard_bc: true`, drop $\mathcal L_{bc}$.
+Weighting (`loss_weighting: annealing|fixed`): default `annealing` = Wang et al. learning-rate annealing (Algorithm 1 of the paper), recomputed every 500 epochs: $\hat\lambda_i=\max_\theta|\nabla_\theta\mathcal L_{r}|/\overline{|\nabla_\theta\mathcal L_i|}$, then $\lambda_i\leftarrow(1-\alpha)\lambda_i+\alpha\hat\lambda_i$ with $\alpha=0.9$ (i.e. the update leans 90% toward the fresh estimate — implement exactly as written, with $\alpha=0.9$). When `hard_bc: true`, drop $\mathcal L_{bc}$.
 
 ## 6. Training specification (exact)
 
