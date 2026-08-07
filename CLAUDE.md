@@ -41,6 +41,7 @@ For a quick check before the full run: `python scripts/run_stage1_bernoulli.py -
 In `configs/default.yaml`:
 - `training.live_dashboard: true` — saves a 3-panel dashboard frame (loss curves + velocity guess vs exact + pressure guess vs exact) every `frame_every` epochs to `results/frames/`.
 - `training.live_display: true` — additionally pops a live matplotlib window updating during training (local machine with display).
+- `training.live_network_viz: true` — a *different* live window (`src/netviz.py`): the actual network drawn as neurons + weighted connections (colored/thickened by each weight's live value), redrawn every `netviz_frame_every` epochs, saved to `results/netviz_frames/` either way. `live_display: true` is required for it to pop an interactive window rather than only save frames — note `netviz.py` forces the `TkAgg` backend explicitly, because matplotlib's auto-detection has been observed to silently fall back to a headless backend on this machine when launched from a wrapping tool/piped stdout, which sinks `live_display` without an error (only a swallowed `FigureCanvasAgg is non-interactive` warning) — do not remove that `matplotlib.use("TkAgg")` call without confirming the underlying auto-detection issue is actually fixed.
 
 After training, stitch the replay:
 ```powershell

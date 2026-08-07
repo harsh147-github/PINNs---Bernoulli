@@ -54,6 +54,8 @@ training:
   live_dashboard: false        # true = save learning-dashboard frames during training
   frame_every: 200             # dashboard frame interval [epochs]
   live_display: false          # true = interactive window (your laptop); false = save PNG frames
+  live_network_viz: false      # true = live node-link diagram of the actual weights (src/netviz.py)
+  netviz_frame_every: 25       # network-diagram redraw interval [epochs] -- cheap, can be frequent
   # held-out throat diameters [m] used ONLY for validation (never trained on)
   held_out_dt: [0.225, 0.275, 0.325, 0.375, 0.425]
 

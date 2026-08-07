@@ -104,6 +104,16 @@ def train(model, cfg: dict, out_dir: str, device: str = "cpu") -> dict:
             live_display=t.get("live_display", False),
         )
 
+    netviz = None
+    if t.get("live_network_viz", False):
+        from src.netviz import NetworkViz
+
+        netviz = NetworkViz(
+            model, cfg, out_dir,
+            frame_every=t.get("netviz_frame_every", 25),
+            live_display=t.get("live_display", False),
+        )
+
     opt = torch.optim.Adam(model.parameters(), lr=t["adam_lr"])
     sched = torch.optim.lr_scheduler.StepLR(
         opt, step_size=t["lr_decay_every"], gamma=t["lr_decay_gamma"]
@@ -127,6 +137,8 @@ def train(model, cfg: dict, out_dir: str, device: str = "cpu") -> dict:
         weights.maybe_anneal(epoch, model, parts)  # before backward: parts' graph is still alive
         if dash is not None:
             dash.maybe_update(epoch, model, parts, total, tag="adam")
+        if netviz is not None:
+            netviz.maybe_update(epoch, t["adam_epochs"], model, total.item(), mode="ADAM")
         total.backward()
         opt.step()
         sched.step()
@@ -178,10 +190,14 @@ def train(model, cfg: dict, out_dir: str, device: str = "cpu") -> dict:
             history["lam_cont"].append(weights.values["cont"])
             history["lam_mom"].append(weights.values["mom"])
             history["phase"].append("lbfgs")
+            if netviz is not None:
+                netviz.maybe_update(state["it"], t["lbfgs_max_iter"], model, total.item(), mode="L-BFGS")
         return total
 
     lbfgs.step(closure)
     pbar2.close()
+    if netviz is not None:
+        netviz.close()
 
     _save_ckpt(model, cfg, history, out / "checkpoints" / "stage1_final.pt")
     (out / "logs" / "train_stage1_history.json").write_text(json.dumps(history))
