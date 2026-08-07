@@ -617,7 +617,13 @@ The 1D surrogate field is reconstructed into a **2D axisymmetric field** for rea
 
 ### MATLAB (`.mat`)
 
-`src/export.py` writes `results/matlab/nozzle_surrogate.mat` via `scipy.io.savemat` containing grids `X`, `DT`, fields `V`, `P`, geometry `D`, and the analytical references. `postprocessing/matlab/load_and_plot.m` loads it and reproduces every key figure (field maps, throat sweep curves, error plots) — no Python needed at analysis time.
+`src/export.py` writes `results/matlab/nozzle_surrogate.mat` via `scipy.io.savemat` containing grids `X`, `DT`, fields `V`, `P`, geometry `D`, and the analytical references. `postprocessing/matlab/load_and_plot.m` loads it and reproduces every key figure (field maps, throat sweep curves, error plots) — no Python needed at analysis time, no toolboxes required.
+
+The duct-shape contour plots reconstruct the same axisymmetric field the Python `colored_cfd_fields.png` uses (README §10): every axial station's `D` gives the duct's local half-width, `V`/`P` are painted across that width uniformly (plug flow — quasi-1D has no radial variation to show), and the duct wall is drawn on top from the same `D` array:
+
+![MATLAB reconstruction of the CFD-style contours -- pressure and velocity fields at the narrowest and widest throat diameters, in the actual duct shape](docs/images/matlab_contour_preview.png)
+
+*(This particular image was rendered in Python from the same `.mat` file, reproducing `load_and_plot.m`'s exact array operations, as a way to verify that script's logic without a MATLAB license on hand — see the file's own comments for the identical array construction.)*
 
 ---
 
