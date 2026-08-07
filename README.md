@@ -621,9 +621,13 @@ The 1D surrogate field is reconstructed into a **2D axisymmetric field** for rea
 
 The duct-shape contour plots reconstruct the same axisymmetric field the Python `colored_cfd_fields.png` uses (README §10): every axial station's `D` gives the duct's local half-width, `V`/`P` are painted across that width uniformly (plug flow — quasi-1D has no radial variation to show), and the duct wall is drawn on top from the same `D` array:
 
-![MATLAB reconstruction of the CFD-style contours -- pressure and velocity fields at the narrowest and widest throat diameters, in the actual duct shape](docs/images/matlab_contour_preview.png)
+![MATLAB/Octave: CFD-style filled contours -- pressure and velocity fields at the narrowest and widest throat diameters, in the actual duct shape](docs/images/matlab_contour_preview.png)
 
-*(This particular image was rendered in Python from the same `.mat` file, reproducing `load_and_plot.m`'s exact array operations, as a way to verify that script's logic without a MATLAB license on hand — see the file's own comments for the identical array construction.)*
+And the second figure `load_and_plot.m` produces — the design-space sweep and relative-error maps:
+
+![MATLAB/Octave: throat velocity/pressure vs throat diameter, and relative-error contours over the whole design space](docs/images/matlab_sweep_preview.png)
+
+*(Both images are the actual, unmodified output of running `postprocessing/matlab/load_and_plot.m` — GNU Octave, MATLAB-compatible, installed on this machine specifically to confirm the script runs correctly rather than just verifying its logic in isolation.)*
 
 ---
 
