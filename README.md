@@ -4,6 +4,8 @@
 
 This repository contains a fully runnable, parametric PINN-based CFD surrogate. It predicts velocity and pressure fields as water flows through a converging–diverging duct **without a mesh, without a CFD solver, and without any CFD training data** — the governing equations themselves are the training signal. The throat diameter is a network input, so a single trained model answers: *"what happens to the flow if I narrow the throat?"* in milliseconds.
 
+**Interactive tutorial:** [`notebooks/PINNs_Bernoulli_Tutorial.ipynb`](notebooks/PINNs_Bernoulli_Tutorial.ipynb) — <a href="https://colab.research.google.com/github/harsh147-github/PINNs---Bernoulli/blob/main/notebooks/PINNs_Bernoulli_Tutorial.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> walks through every section below with the actual `src/` code embedded and running live — geometry, the analytical solution, the hard-BC network trick, physics residuals via autodiff, and a full worked derivation of the loss function (residual → square → mean → weighted sum, plus the gradient-annealing algorithm), ending with a short live training run on Colab's free CPU tier.
+
 ## Status (verified against the code in this repo, not aspirational)
 
 - **Trained and passing all three acceptance gates** (seed 1234):
