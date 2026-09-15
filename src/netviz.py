@@ -68,7 +68,7 @@ class NetworkViz:
 
     Parameters
     ----------
-    model : the PINN (or PINNStage2) instance being trained.
+    model : the PINN instance being trained.
     out_dir : where to save frames (results/netviz_frames/), used whether
         or not `live_display` is also on.
     frame_every : redraw every this many epochs. ~20,000 weights per

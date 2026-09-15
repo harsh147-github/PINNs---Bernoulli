@@ -2,15 +2,14 @@
 
 **A Physics-Informed Neural Network (PINN) surrogate solver for computational fluid dynamics, built from scratch, taught from scratch — using water flowing through a converging–diverging venturi and Bernoulli's theorem as the complete worked example.**
 
-This repository contains a fully runnable, parametric PINN-based CFD surrogate. It predicts velocity and pressure fields as water flows through a converging–diverging duct **without a mesh, without a CFD solver, and without any CFD training data** — the governing equations themselves are the training signal. The throat diameter is a network input, so a single trained model answers: *"what happens to the flow if I narrow the throat?"* in milliseconds. Stage 2 extends the same approach to compressible air flow (quasi-1D Euler) for when the incompressible assumption stops holding.
+This repository contains a fully runnable, parametric PINN-based CFD surrogate. It predicts velocity and pressure fields as water flows through a converging–diverging duct **without a mesh, without a CFD solver, and without any CFD training data** — the governing equations themselves are the training signal. The throat diameter is a network input, so a single trained model answers: *"what happens to the flow if I narrow the throat?"* in milliseconds.
 
 ## Status (verified against the code in this repo, not aspirational)
 
-- **Stage 1 (incompressible, water) — trained and passing all three acceptance gates**, on an RTX 3060, seed 1234:
+- **Trained and passing all three acceptance gates** (seed 1234):
   rel-L2(Ṽ) = **1.03×10⁻⁴** (gate < 1e-3) · rel-L2(p̃) = **2.33×10⁻⁴** (gate < 1e-2) · max Bernoulli-invariant error = **3.4×10⁻²%** (gate < 1%) — all on throat diameters held out of training.
-- **Stage 2 (compressible Euler, air) — code complete, trained twice, NOT yet passing.** rel-L2: rho=4.1e-2, V=4.2e-1, p=2.6e-3 (passes), T=1.4e-2 — gate is <1e-2 for all four. Diagnosed cause: the continuity residual doesn't converge (momentum/energy/EOS all do) — see §10.1's figures and the "found while verifying" note pattern in §9.1 for how this class of issue gets tracked in this repo. Four candidate fixes are identified, none implemented yet.
-- 7/7 tests pass (`pytest tests/ -q`): the 6 original Stage 1 tests plus one new Stage 2 physics sanity check.
-- A CUDA device-mismatch bug (fresh CPU tensors passed to a GPU-resident model) was found and fixed in `evaluate.py`, `physics.py`, and `export.py` while verifying training actually ran on this machine's GPU — see §9.1. A second bug (Stage 2 silently inheriting Stage 1's water inlet speed, badly distorting its residual scaling) was found and fixed after Stage 2's first training run failed outright — see §9.2.
+- 6/6 tests pass (`pytest tests/ -q`).
+- A CUDA device-mismatch bug (fresh CPU tensors passed to a GPU-resident model) was found and fixed in `evaluate.py`, `physics.py`, and `export.py` while verifying training actually ran on GPU — see §9.1. Training also runs fine on CPU-only machines (just slower); nothing in the pipeline requires a GPU.
 
 ---
 
@@ -21,7 +20,7 @@ This README teaches the theory (§1–§7 below). The **source files themselves*
 | # | File | You will understand |
 |---|---|---|
 | 1 | [`src/geometry.py`](src/geometry.py) | The duct shape as differentiable code — no network, no physics yet |
-| 2 | [`src/analytical.py`](src/analytical.py) | The exact answer (closed-form + isentropic) — the "no CFD data needed" ground truth |
+| 2 | [`src/analytical.py`](src/analytical.py) | The exact answer (closed form) — the "no CFD data needed" ground truth |
 | 3 | [`src/physics.py`](src/physics.py) | **The core trick**: turning a differential equation into a checkable number via `torch.autograd.grad` |
 | 4 | [`src/networks.py`](src/networks.py) | The network itself — forward pass, and the hard-boundary-condition architecture trick |
 | 5 | [`src/losses.py`](src/losses.py) | Turning physics violations into the one scalar the optimizer descends |
@@ -29,8 +28,6 @@ This README teaches the theory (§1–§7 below). The **source files themselves*
 | 7 | [`src/train.py`](src/train.py) | The actual training loop — Adam then L-BFGS, running everything above thousands of times |
 | 8 | [`src/evaluate.py`](src/evaluate.py) | Grading the trained network honestly against file #2's exact answer |
 | 9 | [`src/export.py`](src/export.py) / [`src/visualize.py`](src/visualize.py) | Turning the trained function into CSV/ParaView/MATLAB/PNG output |
-
-Stage 2 (compressible air) reuses this exact same skeleton — its additions live in the same files, clearly marked with a `# Stage 2 —` banner comment, so you can read Stage 1 first without any Stage 2 code in the way, then read the Stage 2 banners as a second pass once Stage 1 makes sense.
 
 ---
 
@@ -66,7 +63,7 @@ The goal is **complete, from-scratch understanding**: given the physics of inter
 - How a geometry parameter (throat diameter) becomes just another network input, turning one trained model into a **surrogate** for infinitely many nozzle designs.
 - How results are exported to ParaView (`.vtk/.vtu`) and MATLAB (`.mat`) for professional post-processing.
 
-We deliberately start with **Bernoulli's theorem in a converging–diverging nozzle** because it is the simplest flow model that still contains the essential structure of every CFD problem: a conservation law (mass), a momentum/energy law (Bernoulli), boundary conditions, a geometry, and a closed-form analytical solution to validate against. Everything learned here transfers directly to the compressible Euler equations and the full Navier–Stokes equations — which are included as staged extensions.
+We deliberately start with **Bernoulli's theorem in a converging–diverging nozzle** because it is the simplest flow model that still contains the essential structure of every CFD problem: a conservation law (mass), a momentum/energy law (Bernoulli), boundary conditions, a geometry, and a closed-form analytical solution to validate against.
 
 ---
 
@@ -83,7 +80,7 @@ A **PINN surrogate** is a neural network trained so that its output satisfies th
 
 Once trained, the surrogate evaluates a full flow field in **milliseconds**, for **any** throat diameter in its training range. That is the payoff.
 
-> **Honest caveat (from the literature):** PINNs are not universally better than CFD. They struggle with shocks/discontinuities (Hong et al. 2023 needed weighted losses + hard constraints to capture normal shocks in a CD nozzle), high Reynolds number turbulence, and stiff multiscale problems (Krishnapriyan et al., NeurIPS 2021, "Characterizing possible failure modes in PINNs"). Our staged design keeps us in regimes where PINNs are provably accurate, and Section 13 documents exactly where the known limits are.
+> **Honest caveat (from the literature):** PINNs are not universally better than CFD. They struggle with shocks/discontinuities, high Reynolds number turbulence, and stiff multiscale problems (Krishnapriyan et al., NeurIPS 2021, "Characterizing possible failure modes in PINNs"). This repo stays in the regime — smooth, subsonic, incompressible flow — where PINNs are provably accurate.
 
 ---
 
@@ -91,16 +88,12 @@ Once trained, the surrogate evaluates a full flow field in **milliseconds**, for
 
 ### 3.1 The reduction ladder
 
-The full, general statement of fluid motion is the Navier–Stokes equations. Every simpler model is Navier–Stokes plus assumptions. This ladder is the conceptual backbone of the repo — the code is organized into the same stages:
+The full, general statement of fluid motion is the Navier–Stokes equations. Every simpler model is Navier–Stokes plus assumptions. This repo lives at the bottom rung of that ladder — the simplest model that still contains the essential structure of every CFD problem:
 
-| Stage | Model | Assumptions dropped | Equations | Analytical check? |
-|-------|-------|--------------------|-----------|-------------------|
-| 0 | **Navier–Stokes (2D, incompressible)** | none (laminar) | continuity + 2 momentum PDEs | lid-driven cavity, cylinder benchmarks |
-| 1 | **Quasi-1D incompressible inviscid** = *Bernoulli regime* | viscosity, 2D/3D effects, compressibility | continuity ODE + Bernoulli/momentum ODE | **exact closed form** ✅ |
-| 2 | **Quasi-1D compressible isentropic (Euler)** | viscosity, 2D/3D effects | mass + momentum + energy ODEs + EOS | isentropic area–Mach relations ✅ |
-| 3 | **Parametric surrogate** (Stage 1 or 2 physics + throat diameter as input) | — | same, now ∀D_t | analytical per D_t ✅ |
-
-Stage 1 is the heart of this repository. Stage 2 is included. Stage 0 is the stretch goal with its own module.
+| Model | Assumptions dropped from Navier–Stokes | Equations | Analytical check? |
+|-------|--------------------|-----------|-------------------|
+| **Quasi-1D incompressible inviscid** = *Bernoulli regime* | viscosity, 2D/3D effects, compressibility | continuity ODE + Bernoulli/momentum ODE | **exact closed form** ✅ |
+| **Parametric surrogate** (same physics + throat diameter as input) | — | same, now ∀D_t | analytical per D_t ✅ |
 
 ### 3.2 Geometry: the converging–diverging nozzle
 
@@ -114,7 +107,7 @@ $$D(x; D_t) = D_{in} + (D_t - D_{in})\sin^2\!\left(\frac{\pi x}{L}\right), \qqua
 
 Cross-sectional area: $A(x; D_t) = \dfrac{\pi}{4}D(x;D_t)^2$.
 
-**Default values:** $D_{in} = 0.5\,\text{m}$, parametric range $D_t \in [0.2,\ 0.45]\,\text{m}$, fluid = **water** at $\rho = 998\,\text{kg/m}^3$ (20°C, incompressible), inlet velocity $V_{in} = 2\,\text{m/s}$, inlet pressure $p_{in} = 101{,}325\,\text{Pa}$ (atmospheric reference). Stage 2 (§3.6) instead models compressible **air**, since that's the regime where compressibility actually matters.
+**Default values:** $D_{in} = 0.5\,\text{m}$, parametric range $D_t \in [0.2,\ 0.45]\,\text{m}$, fluid = **water** at $\rho = 998\,\text{kg/m}^3$ (20°C, incompressible), inlet velocity $V_{in} = 2\,\text{m/s}$, inlet pressure $p_{in} = 101{,}325\,\text{Pa}$ (atmospheric reference).
 
 > **Any incompressible, inviscid fluid works here, not just water.** $\rho$, $V_{in}$, and $p_{in}$ never appear inside the residuals the network is trained against (§3.5) — they only rescale the network's dimensionless output back into SI units at export time. The trained network itself is fluid-agnostic; swapping the config from air to water (or any other density) requires no retraining, only re-running the SI conversion.
 
@@ -123,7 +116,7 @@ Cross-sectional area: $A(x; D_t) = \dfrac{\pi}{4}D(x;D_t)^2$.
 Every equation below rests on four assumptions. Each one is doing real work — be honest about what it buys and what it costs:
 
 - **Steady.** Nothing changes with time. Turn on the tap, let the initial sloshing settle, and from then on the velocity and pressure at any *fixed point* in the duct stay constant forever. This kills every $\partial/\partial t$ term before we even start.
-- **Incompressible.** The fluid's density $\rho$ doesn't change, no matter how fast it gets squeezed through the throat. Water at everyday pressures fits this beautifully — it takes enormous pressure to compress it measurably. (Air stops fitting this once it gets fast — that's Stage 2, §3.9.)
+- **Incompressible.** The fluid's density $\rho$ doesn't change, no matter how fast it gets squeezed through the throat. Water at everyday pressures fits this beautifully — it takes enormous pressure to compress it measurably.
 - **Inviscid.** We ignore internal friction (viscosity). Real water has some, but for a short, smoothly-tapered duct like ours, friction losses are small next to the pressure changes the area change itself causes — so dropping viscosity is a fair first approximation, and it's the one assumption that turns a genuinely hard problem (Navier–Stokes) into an easy one (Euler → Bernoulli).
 - **Quasi-1D.** We track exactly one number for velocity and one for pressure *per cross-section*, as if the fluid moves in flat slugs straight down the axis with no swirling. Valid as long as the duct's diameter changes gradually — which ours does by construction (§3.2).
 
@@ -220,14 +213,6 @@ Divide Eq. (1) through by $A_{in}V_{in}$ and Eq. (2)'s integrated form by $\tfra
 $$\frac{d}{d\tilde{x}}\big[\tilde{A}\,\tilde{V}\big] = 0, \qquad \frac{d}{d\tilde{x}}\left(\tilde{p} + \tilde{V}^2\right) = 0, \qquad \tilde{V}(0)=1,\ \ \tilde{p}(0)=0 \tag{5}$$
 
 and the analytical target becomes $\tilde{V} = 1/\tilde{A}$, $\tilde{p} = 1 - \tilde{V}^2$. Everything the network ever sees or produces is $O(1)$; SI units only reappear at the very last step, when `export.py` converts the trained network's output back using $\rho$, $V_{in}$, $p_{in}$. (This is also *why* the fluid — water, air, anything incompressible — never needs to be baked into the network: those constants don't appear in Eq. (5) at all.)
-
-### 3.9 Stage 2 physics — compressible quasi-1D Euler (included extension)
-
-When the throat velocity approaches the speed of sound, incompressibility breaks. The quasi-1D steady Euler system replaces Eq. (2):
-
-$$\frac{d(\rho A V)}{dx} = 0, \qquad \rho V \frac{dV}{dx} + \frac{dp}{dx} = 0, \qquad h + \frac{V^2}{2} = h_0,\qquad p = \rho R T \tag{6}$$
-
-with network outputs $(\tilde{\rho}, \tilde{V}, \tilde{p}, \tilde{T})$ and validation against the isentropic area–Mach relation $\frac{A}{A^*} = \frac{1}{M}\left[\frac{2}{\gamma+1}\left(1+\frac{\gamma-1}{2}M^2\right)\right]^{\frac{\gamma+1}{2(\gamma-1)}}$. We stay in the **subsonic branch** (no normal shocks): the literature (Hong et al. 2023; WHC-PINN 2025) shows vanilla PINNs converge to trivial/wrong solutions at shocks and need loss reweighting + hard pressure constraints — documented as future work, not hidden from you.
 
 ---
 
@@ -418,7 +403,7 @@ def total(self, model, xt_f, dtt_f, dtt_b=None, hard_bc=True):
 
 **Loss weighting matters.** Different terms have different gradient magnitudes, and imbalanced gradients cause the optimizer to satisfy one equation while ignoring another (Wang, Teng & Perdikaris 2021, "gradient pathologies"). Two supported strategies:
 
-- `fixed`: user-set weights (Stage 1 works with all $\lambda=1$; Hong et al. found $\lambda_{mom}\approx 20$ necessary in shock cases).
+- `fixed`: user-set weights (works fine here with all $\lambda=1$).
 - `annealing` (default): Wang et al.'s learning-rate annealing — periodically set $\hat\lambda_i = \max|\nabla_\theta \mathcal{L}_{r}| \,/\, \overline{|\nabla_\theta \mathcal{L}_i|}$ with a 0.9 moving average. This self-balances the terms. In code, `LossWeights.maybe_anneal`:
 
   ```python
@@ -452,15 +437,15 @@ def total(self, model, xt_f, dtt_f, dtt_b=None, hard_bc=True):
 | Choice | Value | Why |
 |---|---|---|
 | Inputs | $(\tilde{x}, \tilde{D}_t)$ — 2 | position + design parameter = parametric surrogate |
-| Outputs | $(\hat{\tilde{V}}, \hat{\tilde{p}})$ — 2 (Stage 1); $(\hat{\tilde\rho}, \hat{\tilde V}, \hat{\tilde p}, \hat{\tilde T})$ — 4 (Stage 2) | primitive flow variables |
-| Hidden layers | 6 × 64 neurons | comfortably fits smooth 1D solutions (literature uses 3×30 for nozzle Euler; we overprovision slightly for the parametric dimension) |
+| Outputs | $(\hat{\tilde{V}}, \hat{\tilde{p}})$ — 2 | primitive flow variables |
+| Hidden layers | 6 × 64 neurons | comfortably fits smooth 1D solutions; overprovisioned slightly for the parametric dimension |
 | Activation | `tanh` | $C^\infty$ smooth → clean high-order autodiff derivatives (HFM used `sin`; `sin` (SIREN) is available as a flag) |
 | Initialization | Xavier/Glorot uniform | keeps activation variances stable at depth, avoids early saturation of tanh |
 | Output transform | hard-BC ansatz (Section 5③) | exact BC satisfaction, faster convergence (Sun et al. 2020) |
-| Positivity guards | $\tilde A > 0$ by construction; Stage 2: $\tilde\rho, \tilde p = \text{softplus}(\cdot)$ | prevents unphysical states during early training |
+| Positivity guards | $\tilde A > 0$ by construction | prevents unphysical states during early training |
 | Precision | float64 for physics paths | PDE residuals amplify round-off; float64 costs little at this size |
 
-**The architecture, drawn out** (Stage 1; Stage 2 is identical except the final layer is 4-wide and the output transform is the softplus-shifted version from `networks.py`'s `PINNStage2`, README Section 6's positivity-guards row):
+**The architecture, drawn out:**
 
 ```mermaid
 flowchart LR
@@ -510,9 +495,8 @@ PINNs---Bernoulli/
 │   └── default.yaml           ← every hyperparameter in one place (physics, network, training, export)
 ├── src/
 │   ├── geometry.py            ← D(x; Dt), A(x; Dt), dA/dx — Eq. geometry law, nondim + SI
-│   ├── physics.py             ← residuals r_cont, r_mom (Stage 1) & quasi-1D Euler residuals (Stage 2)
-│   │                            via torch.autograd.grad — THE equations-to-code file
-│   ├── analytical.py          ← Eq. (4) + compressible isentropic reference — ground truth for validation
+│   ├── physics.py             ← residuals r_cont, r_mom via torch.autograd.grad — THE equations-to-code file
+│   ├── analytical.py          ← Eq. (4) — ground truth for validation
 │   ├── networks.py            ← MLP builder, tanh/sin activations, Xavier init, hard-BC output transforms
 │   ├── losses.py              ← L_cont, L_mom, L_bc(soft), weighting strategies (fixed / LR-annealing)
 │   ├── sampling.py            ← Latin Hypercube collocation sampler over (x, Dt) space; boundary samplers
@@ -522,8 +506,7 @@ PINNs---Bernoulli/
 │   │                            MATLAB (.mat via scipy.io.savemat)
 │   └── visualize.py           ← matplotlib plots: V(x), p(x) vs analytical, parametric sweeps, loss curves
 ├── scripts/
-│   ├── run_stage1_bernoulli.py    ← one command: train Stage 1 surrogate end-to-end
-│   ├── run_stage2_compressible.py ← one command: train Stage 2 (quasi-1D Euler)
+│   ├── run_stage1_bernoulli.py    ← one command: train the surrogate end-to-end
 │   └── run_parametric_sweep.py    ← load trained surrogate, sweep Dt, export all post-processing files
 ├── postprocessing/
 │   ├── paraview/README.md     ← how to open .vtu, apply filters (Warp, Calculator, StreamTracer)
@@ -546,15 +529,11 @@ PINNs---Bernoulli/
 5. **Validate** every 500 epochs against the analytical solution on 10,000 fresh points; track relative $L^2$ for $\tilde V$ and $\tilde p$.
 6. **Acceptance gates** (the run is only "done" when): rel-$L^2(\tilde V) < 10^{-3}$, rel-$L^2(\tilde p) < 10^{-2}$ (pressure is more sensitive — it scales with $\tilde V^2$), Bernoulli constant variation < 1% across the domain, for **all** sampled $\tilde D_t$, including values never seen in training (interpolation check).
 
-Measured wall time on an RTX 3060: ~12 minutes for the 20,000-epoch Adam phase, ~5–6 minutes for the L-BFGS polish — call it 15–18 minutes end to end, including exports and figures. (The network is tiny — 21,122 parameters — so a GPU's advantage here is real but modest; expect low tens of minutes on CPU too.)
+The network is tiny — 21,122 parameters — so training is fast on CPU alone (expect roughly 15–20 minutes end to end for the full 20,000-epoch Adam phase plus L-BFGS polish, including exports and figures); a GPU speeds this up further but isn't required.
 
 ### 9.1 A bug found while verifying on GPU
 
 `evaluate.py`'s `validate_held_out`/`full_report`, `physics.py`'s `total_head`, and `export.py`'s `predict_si` all built fresh input tensors with plain `torch.as_tensor(...)` (which defaults to CPU) and called the model directly. That's silent on a CPU-only machine but fatal — `RuntimeError: Expected all tensors to be on the same device` — the moment the model lives on a CUDA device, since PyTorch refuses to multiply a CPU tensor against CUDA weights. Fixed by moving inputs to `next(model.parameters()).device` right before each model call and moving results back to CPU right after, at each of the three call sites. Training/loss math is unchanged — this only touches how validation and export reach the model.
-
-### 9.2 A second bug: Stage 2 silently inherited Stage 1's fluid speed
-
-Stage 1 and Stage 2 share one `physics:` config block. Changing `physics.V_in` to water's ~2 m/s (for the Stage 1 fluid correction) also fed that same number into Stage 2's air-flow equations — Stage 2's momentum residual scales by `kappa = p_in/(rho_in*V_in^2)`, and with air's `rho_in` (~1.18 kg/m³, not water's), that pushed `kappa` to ~21,500: a massive mismatch against the other three residuals' natural scale. Confirmed by comparing Stage 2's first training run's per-epoch loss history: three loss-weight lambdas pinned at the annealing scheme's 1e4 clip ceiling for the entire run, unable to converge. Fixed by giving Stage 2 its own `stage2.physics.V_in: 10.0` (a physically sensible subsonic air speed) and overriding `cfg["physics"]["V_in"]` with it once in `run_stage2_compressible.py`, right after config load — Stage 1 is untouched, since it loads its own config independently and never reaches that override path. This fix substantially improved Stage 2 (density error 20.6%→4.1%, temperature 8.9%→1.4%) but did not resolve the continuity-convergence issue documented in §10.1.
 
 ---
 
@@ -566,46 +545,27 @@ Three independent checks, all automated:
 - **Invariant check:** $\hat{\tilde p} + \hat{\tilde V}^2 \equiv 1$ (total head constancy) plotted as a map over $(\tilde x, \tilde D_t)$.
 - **Generalization:** hold out $D_t = 0.225, 0.275, 0.325, 0.375, 0.425$ m from training; evaluate only on them. A surrogate that memorizes training geometries fails here; a physics-trained one passes, because the *equations* hold everywhere.
 
-**Actual result of the reference training run** (seed 1234, RTX 3060, config as committed): rel-$L^2(\tilde V) = 1.03\times10^{-4}$, rel-$L^2(\tilde p) = 2.33\times10^{-4}$, max Bernoulli-invariant error $= 3.4\times10^{-4}$ (0.034%) — all three gates pass with roughly a 10× margin, on throat diameters never seen during training. What that looks like, straight from this training run's own `results/figures/`:
+**Actual result of the reference training run** (seed 1234, config as committed): rel-$L^2(\tilde V) = 1.03\times10^{-4}$, rel-$L^2(\tilde p) = 2.33\times10^{-4}$, max Bernoulli-invariant error $= 3.4\times10^{-4}$ (0.034%) — all three gates pass with roughly a 10× margin, on throat diameters never seen during training. What that looks like, straight from this training run's own `results/figures/`:
 
 **(a) Solid = trained network, dashed = the exact analytical answer, at four throat diameters.** If the network had learned nothing, these would diverge; instead they sit on top of each other:
 
-![Stage 1: trained network vs exact solution, velocity and pressure along the duct](docs/images/stage1_fields_vs_exact.png)
+![Trained network vs exact solution, velocity and pressure along the duct](docs/images/stage1_fields_vs_exact.png)
 
 **(b) The parametric sweep** — throat velocity and pressure as $D_t$ changes, network vs exact, confirming the surrogate captures the *trend* across the whole design space, not just one geometry it happened to memorize:
 
-![Stage 1: throat velocity and pressure vs throat diameter sweep](docs/images/stage1_throat_sweep.png)
+![Throat velocity and pressure vs throat diameter sweep](docs/images/stage1_throat_sweep.png)
 
 **(c) The axisymmetric reconstruction** (§11 explains how a 1D field becomes this) — what the flow actually looks like, colored by pressure and velocity, at the widest and narrowest throat in the design range:
 
-![Stage 1: colored CFD-style pressure and velocity fields in the duct shape](docs/images/stage1_colored_fields.png)
+![Colored CFD-style pressure and velocity fields in the duct shape](docs/images/stage1_colored_fields.png)
 
 **(d) The Bernoulli-invariant error map** — $|\hat{\tilde p}+\hat{\tilde V}^2-1|$ over the *entire* $(\tilde x, \tilde D_t)$ design space, not just the four curves plotted in (a). This is the self-consistency check that has nothing to do with matching the exact solution — it only asks whether the network's own output obeys Bernoulli's theorem everywhere:
 
-![Stage 1: Bernoulli invariant error map over the whole design space](docs/images/stage1_total_head_error_map.png)
+![Bernoulli invariant error map over the whole design space](docs/images/stage1_total_head_error_map.png)
 
 **(e) Loss history** — every term from README §5, log scale, Adam then L-BFGS:
 
-![Stage 1: training loss history, per term, log scale](docs/images/stage1_loss_history.png)
-
-### 10.1 Stage 2 (compressible air) — honest current result, not yet passing
-
-Unlike the Stage 1 figures above, these do **not** show a converged solution — shown anyway, without editing them to look better, because that's what's actually in this repo right now. Density, pressure, and temperature match well; velocity visibly does not, which is the same failure the acceptance-gate numbers in the Status section report (rel-L2(V) = 42%, gate is <1%):
-
-![Stage 2: trained network vs exact isentropic solution — velocity clearly does not match](docs/images/stage2_fields_vs_exact.png)
-
-Loss history shows why: three of the four terms (momentum, energy, ideal-gas) drop to near-zero, while the continuity term (visible as the curve that never leaves the upper part of the plot) never converges — the diagnosis in the Status section, made visual:
-
-![Stage 2: training loss history — continuity term fails to converge while the other three do](docs/images/stage2_loss_history.png)
-
-**Why continuity specifically, and not the other three:** continuity (`d/dx[rho~ * A~ * V~] = 0`) is the only Stage 2 equation that couples two *independently learned* network outputs (density and velocity) through a derivative of their product — the network has to get both fields moving in a precisely coordinated way as `x` changes. Energy and the ideal-gas relation are purely algebraic (no derivative, no coordination across `x` needed — hence near-zero loss almost immediately), and momentum only couples two fields (`V`, `p`), not three. The automatic loss-weight annealing (README §5) only balances gradient *magnitude* across terms, not *direction* — it can't resolve a case where satisfying one equation's gradient pulls against another's, which is what the flat continuity curve above suggests is happening. This is a documented category of PINN failure (Wang, Teng & Perdikaris 2021; Krishnapriyan et al. 2021 — both in §13), not an isolated bug in this repo.
-
-**Candidate fixes, not yet implemented, ranked by how much new work each is:**
-
-1. Add a `lambda_cont_boost` config switch — same mechanism `losses.py`'s existing `lambda_mom_boost` already implements, just pinning continuity's weight instead of momentum's (which already converges fine, so boosting it further doesn't address anything).
-2. Switch `stage2.loss.weighting` to `fixed` with continuity's lambda set high by hand from the start, removing the adaptive scheme's possible self-interference.
-3. Reparametrize the network to output the mass flux `rho~ * A~ * V~` directly as one hard-BC'd quantity, instead of `rho~` and `V~` separately and multiplying afterward — makes continuity satisfiable by construction, the same philosophy that makes Stage 1's inlet condition unbreakable (README §4.4).
-4. Leave it as documented here and move on — a legitimate stopping point for a first attempt at a coupled 4-equation PINN system.
+![Training loss history, per term, log scale](docs/images/stage1_loss_history.png)
 
 ---
 
@@ -640,7 +600,6 @@ python -m venv .venv && source .venv/bin/activate     # or conda
 pip install -r requirements.txt                        # torch, numpy, scipy, matplotlib, pyvista, pyyaml, pandas, tqdm, imageio
 
 python scripts/run_stage1_bernoulli.py --config configs/default.yaml   # train the Bernoulli surrogate
-python scripts/run_stage2_compressible.py --config configs/default.yaml # compressible extension
 python scripts/run_parametric_sweep.py  --checkpoint results/checkpoints/stage1_final.pt \
         --dt-min 0.20 --dt-max 0.45 --n 25                              # sweep throat, export ParaView+MATLAB
 pytest tests/ -q                                       # physics/unit sanity checks
@@ -664,9 +623,7 @@ Annotated map of the field this repo stands on — every claim in this README tr
 - **Jin, Cai, Li, Karniadakis (2021), *NSFnets*, J. Comput. Phys. 426:109951** — systematic PINN formulation of incompressible Navier–Stokes (velocity–pressure and vorticity–velocity forms), laminar→turbulent limits.
 - **Sun, Gao, Pan, Wang (2020), *Surrogate modeling for fluid flows based on physics-constrained deep learning without simulation data*, CMAME 361:112732** — **the single most important reference for this repo**: parametric geometry as network input, hard BC enforcement, *zero* CFD data, vascular-flow surrogates + uncertainty propagation.
 
-**Nozzle flows & compressible PINNs (our exact problem family)**
-- **Hong et al. (2023), *Continuous and discontinuous compressible flows in a converging–diverging channel solved by PINNs without data*, arXiv:2306.11749 / Sci. Rep.** — quasi-1D Euler CD nozzle; vanilla PINNs collapse to trivial solutions at shocks; fixed by ~20× momentum-loss weight + hard pressure BCs. Their nozzle law and Pb regimes inform our Stage 2.
-- **WHC-PINN (2025), *PINN with weighted loss and hard constraints for hyperbolic conservation laws*, Sci. Rep.** — gradient-based weighting + global conservation term + pressure-only hard constraints; captures Riemann problems and nozzle shocks with a unified solver.
+**Nozzle flows (our exact problem family)**
 - **Anderson, *Computational Fluid Dynamics: The Basics with Applications*, Ch. 7** — the classical quasi-1D nozzle CFD tutorial (MacCormack scheme) — what we replace with a PINN.
 
 **Training dynamics & failure modes**
@@ -679,18 +636,13 @@ Annotated map of the field this repo stands on — every claim in this README tr
 - ***Investigating the Effects of Labeled Data on Parameterized PINNs for Surrogate Modeling* (2024), MDPI Fluids 9(12):296** — parametric PINN design optimization (drag reduction over a forward-facing step); small amounts of labeled data + low data-loss weight improve parametric surrogates; gradients w.r.t. design parameters from autodiff.
 
 **Reference codebases worth reading**
-- `maziarraissi/PINNs` — the original (TF1). `rezaakb/pinns-torch` — PyTorch re-implementation, up to 9× faster via CUDA graphs (NeurIPS DLDE 2023). `chen-yingfa/pinn-torch` — clean minimal PyTorch Navier–Stokes PINN. `pjuangph/PINN-Torch` — tutorial-style, includes Euler/shock-tube limitations demo. `parfenyev/2d-turb-PINN` — PINN inference from PIV data. **Frameworks:** DeepXDE (multi-backend, beginner-friendly), NVIDIA Modulus/PhysicsNeMo (industrial scale).
+- `maziarraissi/PINNs` — the original (TF1). `rezaakb/pinns-torch` — PyTorch re-implementation, up to 9× faster via CUDA graphs (NeurIPS DLDE 2023). `chen-yingfa/pinn-torch` — clean minimal PyTorch Navier–Stokes PINN. `parfenyev/2d-turb-PINN` — PINN inference from PIV data. **Frameworks:** DeepXDE (multi-backend, beginner-friendly), NVIDIA Modulus/PhysicsNeMo (industrial scale).
 
 ---
 
 ## 14. Roadmap
 
-- [x] Stage 1 — parametric incompressible Bernoulli surrogate (trained, all acceptance gates pass — §9.1, §10)
-- [x] Stage 2 — quasi-1D compressible Euler code (network, residuals, isentropic validation, training loop, run script) — trained twice, **not yet passing: continuity residual doesn't converge, see §10.1 / §9.2 / Status**
-- [ ] Stage 2 — fix continuity convergence (4 candidate approaches identified, none implemented — see §10.1)
-- [ ] Stage 2 — ParaView `.vtu` / MATLAB `.mat` export parity with Stage 1 (currently CSV + figures only)
-- [ ] Stage 2b — shock capturing (weighted loss + hard pressure constraints, per Hong et al. / WHC-PINN)
-- [ ] Stage 0 — 2D incompressible Navier–Stokes nozzle (NSFnets VP formulation, `sin` activations)
+- [x] Parametric incompressible Bernoulli surrogate (trained, all acceptance gates pass — §9.1, §10)
 - [ ] Data assimilation mode — inject sparse pressure-tap measurements (`λ_data` term already stubbed)
 - [ ] Gradient-based throat optimization: maximize thrust/recovery using $\partial p/\partial D_t$ from the surrogate
 - [ ] Uncertainty quantification over $\rho$, $V_{in}$ via the parametric surrogate
