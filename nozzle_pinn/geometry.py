@@ -105,6 +105,17 @@ class Nozzle:
         """Wall slope R'(x; dt)."""
         return 0.5 * (dt - 1.0) * self.dphi_dx(x)
 
+    def jet_velocity(self, x, dt):
+        """Velocity scale of the core flow, U_s = (R_in / R_c)^2.
+
+        R_c follows the wall through the converging section but stays at the
+        throat radius downstream: the jet leaving the throat keeps (roughly)
+        its throat velocity through the diffuser, while the *mean* velocity
+        U_m drops back to 1. Used to scale the network's velocity correction.
+        """
+        Rc = 0.5 * (1.0 + (dt - 1.0) * smootherstep((x - self.x1) / self.L_converge))
+        return (0.5 / Rc) ** 2
+
     def mean_velocity(self, x, dt):
         """Quasi-1D mean velocity U_m = (R_in / R)^2 from mass conservation."""
         return (0.5 / self.radius(x, dt)) ** 2

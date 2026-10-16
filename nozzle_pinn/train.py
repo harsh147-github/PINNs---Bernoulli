@@ -30,7 +30,8 @@ def build_model(cfg: Dict[str, Any]) -> NozzlePINN:
     noz = Nozzle.from_config(cfg)
     net = cfg["network"]
     return NozzlePINN(noz, float(cfg["physics"]["Re"]), int(net["hidden_width"]),
-                      int(net["hidden_layers"]), int(net["quad_nodes"]), str(net["architecture"]))
+                      int(net["hidden_layers"]), int(net["quad_nodes"]), str(net["architecture"]),
+                      str(net.get("correction_scale", "local")))
 
 
 def loss_terms(model: NozzlePINN, Xi, di, Xo, do, Re: float) -> Dict[str, torch.Tensor]:

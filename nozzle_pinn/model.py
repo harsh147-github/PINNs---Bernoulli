@@ -99,8 +99,10 @@ class NozzlePINN(nn.Module):
     """Parametric surrogate (x, r, dt) -> (u, v, p) with hard boundary conditions."""
 
     def __init__(self, noz: Nozzle, Re: float, width: int = 64, depth: int = 6,
-                 n_quad: int = 64, architecture: str = "modified_mlp") -> None:
+                 n_quad: int = 64, architecture: str = "modified_mlp",
+                 correction_scale: str = "local") -> None:
         super().__init__()
+        self.correction_scale = correction_scale
         self.noz = noz
         self.Re = float(Re)
         net_cls = {"mlp": MLP, "modified_mlp": ModifiedMLP}[architecture]
@@ -156,7 +158,10 @@ class NozzlePINN(nn.Module):
         N = self.mlp(self.normalise(x, s, dt))
         Nu, Nv, Np = N[:, 0], N[:, 1], N[:, 2]
         wall = 1.0 - s
-        u = wall * Um * (2.0 + xi * Nu)
-        v = eta * wall * Um * (2.0 * dR + xi * Nv)
+        # scale of the learned correction: local mean velocity, or the jet
+        # velocity (stays at the throat value downstream of the throat)
+        Us = Um if self.correction_scale == "local" else n.jet_velocity(x, dt)
+        u = wall * (2.0 * Um + xi * Us * Nu)
+        v = eta * wall * (2.0 * Um * dR + xi * Us * Nv)
         p = self.p_prior(x, dt) + (1.0 - xi) * dt ** (-4) * Np
         return {"u": u, "v": v, "p": p, "R": R, "Um": Um}
