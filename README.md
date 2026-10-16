@@ -51,9 +51,9 @@ small network (milliseconds) instead of a fresh CFD run. This is the
 pip install -r requirements.txt          # torch, numpy, scipy, matplotlib, pyyaml, pillow, pytest
 sudo apt-get install openfoam            # Ubuntu package (OpenFOAM v1912) — reference solver only
 
-pytest tests -q                          # 6 unit tests
-python scripts/run_openfoam.py           # 7 OpenFOAM reference cases  (~3 min)
-python scripts/train.py                  # train the parametric PINN    (~2 h on a 4-core CPU)
+pytest tests -q                          # 7 unit tests
+python scripts/run_openfoam.py           # 7 OpenFOAM reference cases  (~4 min)
+python scripts/train.py                  # train the parametric PINN    (~3.5 h on a 4-core CPU)
 python scripts/infer_and_postprocess.py  # 121-design sweep, comparisons, figures, GIF, VTK (~2 min)
 # or everything at once:
 bash scripts/run_all.sh
@@ -95,16 +95,19 @@ cannot:
 Navier–Stokes is therefore the "best" model here. It is the same model
 OpenFOAM's `simpleFoam` solves, so the comparison is like-for-like.
 
-**Reynolds number.** We solve at **Re = U D_in / ν = 100**, i.e. laminar flow.
-Physically this is water at 20 °C in a 10 mm pipe at 1 cm/s (see
-`physics:` in `configs/nozzle.yaml`).
+**Reynolds number.** We solve at **Re = U D_in / ν = 50**, i.e. laminar flow.
+Physically this is water at 20 °C in a 10 mm pipe at 5 mm/s (see
+`physics:` in `configs/nozzle.yaml`). The narrowest throat (`d_t = 0.4`)
+runs at a throat Reynolds number of 125 and produces a strong jet with a
+separated diffuser. §7.2 explains why Re = 50 rather than 100: the domain
+length needed for a well-posed outlet.
 
 Why not the 0.5 m / 2 m s⁻¹ pipe of a full-scale water main? That flow has
 Re ≈ 10⁶ and is turbulent. Solving it means RANS turbulence modelling (k-ω SST
 and similar). Vanilla PINNs are known to fail at such Reynolds numbers, and
 a RANS-PINN is a research project of its own (see §11).
 
-Laminar Re = 100 keeps every physical effect the study is about:
+Laminar Re = 50 keeps every physical effect the study is about:
 - acceleration in the throat;
 - the static-to-dynamic pressure exchange;
 - viscous losses;
@@ -119,14 +122,24 @@ same equations exactly with its laminar model.
 With velocity `(u, v)` in the `(x, r)` directions and kinematic pressure `p`:
 
 ```
-continuity   ∂u/∂x + ∂v/∂r + v/r                                         = 0     (1)
+continuity   ∂u/∂x + ∂v/∂r + v/r                                                         = 0   (1)
 x-momentum   u ∂u/∂x + v ∂u/∂r + ∂p/∂x − (1/Re)(∂²u/∂x² + ∂²u/∂r² + (1/r)∂u/∂r)        = 0   (2)
 r-momentum   u ∂v/∂x + v ∂v/∂r + ∂p/∂r − (1/Re)(∂²v/∂x² + ∂²v/∂r² + (1/r)∂v/∂r − v/r²) = 0   (3)
 ```
 
 The `v/r`, `(1/r)∂/∂r` and `v/r²` terms are what the cylindrical geometry adds
-to the Cartesian equations. Equations (1)–(3) are implemented line-for-line in
+to the Cartesian equations. Equations (2)–(3) are implemented line-for-line in
 `nozzle_pinn/physics.py`.
+
+Equation (1) is satisfied **exactly by construction**. The velocity is
+derived from a Stokes stream function `ψ`:
+
+```
+u = (1/r) ∂ψ/∂r,     v = −(1/r) ∂ψ/∂x
+```
+
+Substituting gives `∂u/∂x + ∂v/∂r + v/r ≡ 0` for any `ψ`. See §4.2 and §7.3
+for why this matters here.
 
 ### 2.3 Derived quantities we report
 
@@ -135,7 +148,7 @@ to the Cartesian equations. Equations (1)–(3) are implemented line-for-line in
 | `p` | static pressure | network output |
 | `q` | **dynamic pressure** | `½ (u² + v²)` |
 | `p0` | total pressure | `p + q` |
-| `ψ` | Stokes stream function | `ψ = ∫₀ʳ u r' dr'`, normalised so ψ = 0 on the axis and 1 on the wall |
+| `ψ` | Stokes stream function | `ψ = ∫₀ʳ u r' dr'`, shown normalised: 0 on the axis, 1 on the wall |
 
 In axisymmetric incompressible flow, **lines of constant ψ are exactly the
 streamlines**. Every streamline plot here is drawn as iso-ψ contours, at 10
@@ -149,7 +162,7 @@ any region with ψ > 1 is recirculating fluid.
 ### 3.1 Geometry (`nozzle_pinn/geometry.py`)
 
 Lengths are in units of the inlet diameter `D_in`. The pipe is built from five
-segments, 8.5 inlet diameters in total:
+segments, 12.5 inlet diameters in total:
 
 | segment | length | radius |
 |---|---|---|
@@ -157,7 +170,7 @@ segments, 8.5 inlet diameters in total:
 | converging | 1.5 | 0.5 → d_t/2 |
 | throat | 1.5 | d_t/2 |
 | diverging (diffuser) | 2.5 | d_t/2 → 0.5 |
-| outlet pipe | 2.0 | 0.5 |
+| outlet pipe | 6.0 | 0.5 |
 
 The wall is a single analytic formula:
 
@@ -187,7 +200,8 @@ literally solve the same numbers: the OpenFOAM case uses `D = 1`, `U = 1`,
 `ν = 1/Re`.
 
 To convert to SI: `p[Pa] = p̂ · ρU²`, which is 0.0998 Pa per unit for the
-water case in the config. The sweep CSV contains SI columns.
+water case in the config (ρ = 998.2 kg/m³, U = 5 mm/s → ρU² = 0.0250 Pa).
+The sweep CSV contains SI columns.
 
 ### 3.3 Boundary conditions (identical in PINN and OpenFOAM)
 
@@ -197,6 +211,7 @@ water case in the config. The sweep CSV contains SI columns.
 | wall r = R(x) | no-slip u = v = 0 | exact (ansatz) | `noSlip` |
 | axis r = 0 | symmetry: v = 0, ∂u/∂r = ∂p/∂r = 0 | exact (ansatz, input η²) | wedge axis |
 | outlet x = L | p = 0, zero velocity gradient | p exact; ∂u/∂x = 0, v = 0 as soft loss | `fixedValue 0` / `zeroGradient` |
+| mass flux | `∫ 2πr u dr = π/4` at every section | **exact** (stream function, ψ_wall = 1/8) | conservative finite volume |
 
 ---
 
@@ -204,8 +219,10 @@ water case in the config. The sweep CSV contains SI columns.
 
 ### 4.1 Inputs and outputs
 
-The network is a map `(x, r, d_t) ↦ (u, v, p)`. It sees **normalised**
-inputs (`NozzlePINN.normalise`):
+The surrogate is a map `(x, r, d_t) ↦ (u, v, p)`. Internally the network
+outputs two scalars `(N_ψ, N_p)`, from which the stream function and the
+pressure are built (§4.2). It sees **normalised** inputs
+(`NozzlePINN.normalise`):
 
 ```
 x̂ = 2x/L − 1,    ŝ = 2η² − 1  with η = r / R(x; d_t),    d̂ = 2(d_t − 0.4)/0.6 − 1
@@ -222,44 +239,59 @@ Three choices matter here:
 - **`d̂` is the design parameter.** Feeding it as an input is what makes the
   network a *parametric* solver.
 
-### 4.2 Hard constraints: boundary conditions that cannot be violated
+### 4.2 Hard constraints: exact mass conservation and boundary conditions
 
-The raw network output `N = (N_u, N_v, N_p)` is never used directly. It is
-wrapped in an **ansatz** (`NozzlePINN.forward`):
+The raw network output `N = (N_ψ, N_p)` is never used directly. It is wrapped
+in an **ansatz** (`NozzlePINN.forward`) built on the Stokes stream function.
+With `s = η²` and `ξ = x/L`:
 
 ```
-U_m = (0.5 / R)²                 quasi-1-D mean velocity (mass conservation)
-ξ   = x / L
-
-u = (1 − η²) · U_m · [ 2        + ξ · N_u ]
-v = η (1 − η²) · U_m · [ 2 R'   + ξ · N_v ]
-p = p_1D(x; d_t)   + (1 − ξ) · d_t⁻⁴ · N_p
-
-p_1D = (1 − U_m²) + (32/Re) ∫ₓᴸ U_m / D² dx'
+ψ(x, r)   = s · H(x, s)
+H(x, s)   = ⅛ [ (2 − s)  +  ξ² (1 − s)² · N_ψ ]
+u = (1/r) ∂ψ/∂r = 2 F_s / R²                      F_s = ∂ψ/∂s = H + s ∂H/∂s
+v = −(1/r) ∂ψ/∂x = −(r/R²) (∂H/∂x − 2 R' F_s / R)
+p = p_1D(x; d_t) + (1 − ξ) · d_t⁻⁴ · N_p
+p_1D = (1 − U_m²) + (32/Re) ∫ₓᴸ U_m / D² dx'      U_m = (0.5/R)²  (quasi-1-D mean velocity)
 ```
 
 Read it factor by factor:
 
-- **`(1 − η²)` vanishes on the wall**, giving no-slip for any weights.
-- **The `ξ` factor vanishes at the inlet.** There `u = 2(1 − η²)`, the
-  Poiseuille profile, and `v = 0` because `R'(0) = 0`.
-- **`η` in `v` vanishes on the axis**, so there is no radial flow through the
-  centre-line.
-- **The `(1 − ξ)` factor vanishes at the outlet**, giving `p = 0` there.
-- **The terms without `N` are an engineering prior.**
-  - `2U_m(1 − η²)` and `2U_m R' η(1 − η²)` describe a locally fully-developed
-    pipe flow. This flow conserves mass *exactly*: its streamlines follow
-    `η = const`.
-  - `p_1D` is textbook pipe hydraulics: 1-D Bernoulli on the mean velocity
-    plus Hagen–Poiseuille friction. It is exactly correct for the straight
-    pipe (`d_t = 1`). The friction integral uses 64-point Gauss–Legendre
-    quadrature so it stays differentiable in torch (`p_prior`).
-- **Scaling by `U_m` and `d_t⁻⁴`** keeps the correction the network must learn
-  O(1) for every nozzle. Throat velocity grows as `d_t⁻²` and dynamic pressure
-  as `d_t⁻⁴`.
+- **Continuity holds identically.** `u` and `v` are derivatives of the same
+  `ψ`, so equation (1) is satisfied for any weights. There is no continuity
+  loss to balance.
+- **The flow rate is exact.** `ψ = ⅛` on the wall (`s = 1`) for every `x` and
+  every nozzle. The volume flux `2π ψ_wall = π/4` therefore equals the inlet
+  flux at *every* cross-section. A unit test checks this to 1e-6 with random
+  weights.
+- **No-slip.** `∂ψ/∂s = 0` on the wall (the `(1 − s)²` factor) gives `u = 0`.
+  `ψ = const` along the wall gives `v = 0`.
+- **Axis.** `ψ ∝ s ∝ r²` near the axis, which is the regularity condition of
+  axisymmetric flow. `v ∝ r` vanishes on the axis. The formulas above never
+  divide by `r`, so they are well-defined on the centre-line itself.
+- **Inlet.** The correction is multiplied by `ξ²`. Its value *and* its
+  x-derivative vanish at the inlet, so `ψ = (2s − s²)/8`. That gives
+  `u = 2(1 − η²)` (Poiseuille, mean 1) and `v = 0`.
+- **Outlet.** `(1 − ξ)` gives `p = 0` there.
+- **Engineering prior.** With `N = 0` the field is a locally fully-developed
+  pipe flow, `u = 2U_m(1 − η²)` and `v = ηR'u` (streamlines follow
+  `η = const`).
+  - The pressure prior `p_1D` is textbook pipe hydraulics: 1-D Bernoulli on
+    the mean velocity plus Hagen–Poiseuille friction.
+  - The prior is the *exact* solution for the straight pipe (`d_t = 1`).
+  - The friction integral uses 64-point Gauss–Legendre quadrature, so it stays
+    differentiable in torch (`p_prior`).
+  - The network learns only the correction to this prior: entrance effects,
+    the jet, the separation and the extra losses.
+- **`d_t⁻⁴` scaling.** The throat dynamic pressure scales as `d_t⁻⁴`, so this
+  keeps the pressure correction O(1) for every nozzle.
 
-With these constraints the optimiser spends no effort on boundary conditions,
-and no boundary-loss weights need tuning.
+`∂H/∂x` (at fixed `s`) and `∂H/∂s` (at fixed `x`) are obtained with one
+autograd call. `forward` passes separate tensor handles `xh = x·1`,
+`sh = s·1` into the network, so the gradients with respect to them are true
+*partial* derivatives.
+
+With these constraints the optimiser spends no effort on boundary conditions
+or mass conservation, and no penalty weights need tuning.
 
 ### 4.3 Architecture: the "modified MLP"
 
@@ -272,8 +304,9 @@ This architecture was proposed to fix the stiff, unbalanced gradients of PINNs
 on Navier–Stokes problems. In our single-design test at d_t = 0.7 it reached
 **0.9 % velocity error after 750 steps**. A plain MLP still had **10–12 %
 error after 3,000 steps**. The **output layer is zero-initialised**, so
-training starts *exactly* at the engineering prior (≈17 % error) and only
-improves from there.
+training starts *exactly* at the engineering prior and improves from there.
+On the final setup the prior is ≈11 % (u) / 10 % (p) from OpenFOAM, averaged
+over the seven reference designs.
 
 ---
 
@@ -284,31 +317,41 @@ improves from there.
 Each training point is a triple `(x, r, d_t)`: a location inside a randomly
 drawn nozzle. One batch therefore samples thousands of *different* nozzles.
 
-- `d_t` is uniform on [0.40, 1.00].
-- 30 % of the points are concentrated in the converge–throat–diffuser
-  region, where the gradients are.
-- 30 % are clustered in the wall layer 0.75 < η < 1, where shear is largest.
-- Radial positions are uniform in η² (i.e. in area), with a small offset so
-  `r > 0`, because the equations contain `1/r`.
-- A fresh set of 4,000 interior points plus 400 outlet points is drawn every
-  500 epochs, so the network never over-fits a fixed set.
+- **Design parameter.** `d_t = 0.4 + 0.6·U^1.3`, so narrow throats (the hard
+  cases) are slightly over-sampled.
+- **Axial.** 30 % of the points are concentrated in the
+  converge–throat–diffuser region.
+- **Radial.** 30 % are clustered in the wall layer `0.75 < η < 1`, where shear
+  is largest. The rest are uniform in `η²`, i.e. in cross-section area, with a
+  small offset so `r > 0` (the momentum equations contain `1/r`).
+- **Residual-based adaptive sampling (RAD, Wu et al. 2023).** Every 500
+  epochs a fresh set of 3,000 interior + 400 outlet points is drawn.
+  - Half of the interior points are chosen *from a 4× larger candidate pool*
+    with probability `∝ e/mean(e) + 1`, where `e` is the current squared PDE
+    residual.
+  - Points therefore move to wherever the network currently violates the
+    physics most, typically the throat jet and the separated diffuser of
+    narrow nozzles.
+  - The `+1` keeps every region covered.
 
 ### 5.2 Loss (`nozzle_pinn/train.py`, `nozzle_pinn/physics.py`)
 
 ```
-L = ⟨ĉ²⟩ + ⟨m̂ₓ²⟩ + ⟨m̂ᵣ²⟩ + ⟨(∂u/∂x)²⟩_outlet + ⟨v²⟩_outlet
+L = ⟨m̂ₓ²⟩ + ⟨m̂ᵣ²⟩ + ⟨(∂u/∂x)²⟩_outlet + ⟨v²⟩_outlet          (+ ⟨ĉ²⟩ ≡ 0, logged only)
 ```
 
-`ĉ, m̂ₓ, m̂ᵣ` are equations (1)–(3) divided by local scales. Continuity is
-divided by `U_m/R`; momentum by `U_m²/R + U_m/(Re R²)`. Without this
-normalisation the d_t = 0.4 nozzle would dominate the loss: its throat
-residuals are about 100× larger.
+`m̂ₓ, m̂ᵣ` are equations (2)–(3) divided by the local scale
+`U_m²/R + U_m/(Re R²)`. Without this normalisation the d_t = 0.4 throat,
+whose residuals are about 100× larger, would drown out the other designs.
+The continuity residual is still computed and logged as a check; it sits at
+round-off (~1e-32).
 
 Every derivative is computed by **automatic differentiation**
-(`torch.autograd.grad(..., create_graph=True)`). Derivatives with respect to
-`x` and `r` flow through the network *and* through the geometry `η = r/R(x)`,
-so they are exact derivatives in physical coordinates. There is no mesh and
-no finite differences.
+(`torch.autograd.grad(..., create_graph=True)`). Velocities are first
+derivatives of `ψ`, so the momentum equations need derivatives of `ψ` up to
+third order. Derivatives with respect to `x` and `r` flow through the network
+*and* through the geometry `η = r/R(x)`, so they are exact derivatives in
+physical coordinates. There is no mesh and no finite differences.
 
 **No CFD data appears in the loss.** OpenFOAM results are used only by the
 optional `monitor` callback. It prints the current error every 500 epochs and
@@ -318,12 +361,12 @@ never contributes a gradient.
 
 | stage | settings | purpose |
 |---|---|---|
-| Adam | 12,000 epochs, lr 1e-3 × 0.8 every 1,500 | robust global descent |
-| L-BFGS | up to 2,000 iterations, 8,000 fixed points, history 50, strong-Wolfe line search | fast local convergence to high accuracy |
+| Adam | 9,000 epochs, lr 1e-3 × 0.8 every 1,500 | robust global descent |
+| L-BFGS | up to 1,500 iterations, 6,000 fixed (residual-adapted) points, history 50, strong-Wolfe line search | fast local convergence to high accuracy |
 
 Other settings:
-- float64 throughout. The `1/r` terms near the axis cancel, which is
-  catastrophic in float32.
+- float64 throughout. The `1/r` terms near the axis cancel, and third
+  derivatives amplify round-off; both are catastrophic in float32.
 - Seed 1234 for everything.
 - 4 CPU threads.
 - Checkpoints every 5,000 epochs.
@@ -334,8 +377,8 @@ Other settings:
 ## 6. Inference and amortisation
 
 `nozzle_pinn/inference.py::field_grid(model, d_t, nx, neta)` evaluates the
-trained network on a structured `(x, η)` grid of any nozzle: 341 × 61 =
-20,801 points by default. It returns `u, v, p, |U|, q, p0, ψ`.
+trained network on a structured `(x, η)` grid of any nozzle: 501 × 61 =
+30,561 points by default. It returns `u, v, p, |U|, q, p0, ψ`.
 
 `ψ` is integrated across each cross-section with the trapezoidal rule. This
 needs `R² ∫₀^η u η' dη'` because `dr = R dη`.
@@ -356,8 +399,8 @@ break-even N* = (PINN training time) / (OpenFOAM time per design − PINN infere
 
 - **Mesh (`blockMeshDict`).** One hex block whose axis edge is collapsed: the
   standard 5° **wedge** for axisymmetric flow. The wall edges follow
-  `R(x; d_t)` via `polyLine`. There are 425 × 50 cells, graded 4:1 toward the
-  wall.
+  `R(x; d_t)` via `polyLine`. There are 625 × 50 = 31,250 cells (50 per
+  inlet diameter axially), graded 4:1 toward the wall.
 - **Solver.** `simpleFoam` (steady SIMPLEC), `simulationType laminar`,
   `ν = 1/Re`. Convection is second-order `linearUpwind`; Laplacians are
   second-order. The run stops at a pressure residual of 1e-8.
@@ -369,13 +412,59 @@ break-even N* = (PINN training time) / (OpenFOAM time per design − PINN infere
   and computes centres. `read_solution` parses the final `U` and `p` and
   projects `U` onto (axial, radial) components.
 
-**Validation of the reference itself:**
-- For the straight pipe (`d_t = 1`), OpenFOAM reproduces the exact
-  Hagen–Poiseuille solution to 0.17 % (u) and 0.42 % (p).
-- A 4× finer mesh (850 × 100 cells) changes the inlet pressure by ≤ 0.03 % and
-  the centre-line velocity by ≤ 0.14 %.
+### 7.1 Validation of the reference itself
+
+- **Exact solution.** For the straight pipe (`d_t = 1`), OpenFOAM reproduces
+  the exact Hagen–Poiseuille solution to **0.18 % (u)** and **0.39 % (p)**
+  (relative L2 over all cells).
+- **Mesh study.** We re-ran d_t = 0.4, 0.7 and 1.0 on a 4× finer mesh
+  (1250 × 100 = 125,000 cells, `run_openfoam.py --nx 1250 --nr 100 --tag _fine`).
+  - Inlet pressure changed by **≤ 0.018 %**.
+  - Centre-line velocity changed by **≤ 0.11 %** (relative L2).
 
 The reference is therefore mesh-converged to well below the PINN error level.
+Each 31k-cell case takes about 30–37 s of wall-clock time (meshing + about
+300 SIMPLE iterations on one core).
+
+### 7.2 Why the outlet pipe is 6 D long and Re = 50 (outlet-length study)
+
+The first version used Re = 100 and a 2 D outlet pipe. OpenFOAM showed that
+for narrow throats the jet was still far from fully developed at the outlet:
+
+| case | backflow region | centre-line u at old outlet (fully developed: 2.0) |
+|---|---|---|
+| Re 100, d_t 0.4 | x = 4.9 → 11.0 | 6.5, and backflow *through* the outlet plane |
+| Re 100, d_t 0.5 | x = 5.1 → 8.1 | 4.0 |
+| Re 100, d_t 0.6 | x = 5.6 → 6.4 | 2.9 |
+
+An outflow condition ("fully developed", "zero gradient") that is not true
+makes the answer depend on how each solver implements it. In that setup the
+PINN and OpenFOAM converged to *different* solutions, and the disagreement
+grew exactly as d_t shrank.
+
+Lengthening the outlet in OpenFOAM showed what each option needs:
+- **Re = 100:** the jet re-develops only at x ≈ 17 (d_t = 0.4), i.e. a ~20 D
+  pipe, too large for a CPU-trained PINN.
+- **Re = 50:** the recirculation closes at x = 7.7 and the flow is fully
+  developed by x = 11.0.
+
+The final set-up is therefore **Re = 50 with a 6 D outlet pipe (L = 12.5)**.
+At the outlet every design now has centre-line u = 2.00–2.02 and no backflow,
+so the outflow condition is *physically true*.
+
+### 7.3 Why a stream function (mass-leak diagnosis)
+
+With primitive outputs `(u, v, p)` and continuity as a soft loss term, the
+d_t = 0.4 solution after 5,000 epochs had a centre-line velocity of 1.55 at
+the outlet instead of 2.0. The network was **losing ~20 % of the mass flux**
+through the jet region.
+- Less flow through the throat means less pressure drop: the inlet pressure
+  was 56–75 instead of OpenFOAM's 89.
+- The leak was cheap for the optimiser because the continuity residual is
+  normalised by the large local scale `U_m/R` in the throat.
+
+The stream-function ansatz (§4.2) removes this failure mode entirely: the
+flow rate is exact at every section for any weights.
 
 ---
 
