@@ -22,7 +22,7 @@ def predict_points(model: NozzlePINN, x: np.ndarray, r: np.ndarray, dt: float | 
     dtt = torch.as_tensor(np.broadcast_to(np.asarray(dt, dtype=np.float64), xt.shape).copy())
     out = model(xt, rt, dtt)
     shape = np.shape(x)
-    return {k: out[k].numpy().reshape(shape) for k in ("u", "v", "p")}
+    return {k: out[k].detach().numpy().reshape(shape) for k in ("u", "v", "p")}
 
 
 def field_grid(model: NozzlePINN, dt: float, nx: int, neta: int) -> Dict[str, np.ndarray]:

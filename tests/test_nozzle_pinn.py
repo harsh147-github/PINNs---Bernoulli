@@ -11,7 +11,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from nozzle_pinn.config import load_config  # noqa: E402
 from nozzle_pinn.geometry import Nozzle  # noqa: E402
-from nozzle_pinn.inference import field_grid  # noqa: E402
+from nozzle_pinn.inference import field_grid, predict_points  # noqa: E402
 from nozzle_pinn.model import NozzlePINN  # noqa: E402
 from nozzle_pinn.openfoam import _parse_list  # noqa: E402
 from nozzle_pinn.physics import ns_residuals  # noqa: E402
@@ -70,14 +70,24 @@ def test_hard_boundary_conditions_hold_for_random_weights():
     assert torch.max(torch.abs(axis["v"])) < 1e-12
 
 
-def test_base_ansatz_conserves_mass_exactly():
-    """With N = 0 the ansatz is a mass-conserving flow for every nozzle."""
+def test_stream_function_conserves_mass_exactly():
+    """Continuity holds identically for RANDOM weights (stream function)."""
     m = _model()
-    for p in m.last_layer.parameters():
-        torch.nn.init.zeros_(p)
     X, d = _points(500)
     res = ns_residuals(m, X, d, RE)
     assert torch.max(torch.abs(res["cont"])) < 1e-9
+
+
+def test_volume_flux_is_exactly_one_in_every_section():
+    """2*pi*int_0^R u r dr = pi/4 (unit mean inlet velocity) for random weights."""
+    m = _model()
+    eta = np.linspace(0.0, 1.0, 4001)
+    for dt in (0.4, 0.73, 1.0):
+        for x in (0.5, NOZ.x2 + 0.1, NOZ.x_throat_mid, NOZ.x4 - 0.3, NOZ.length - 0.1):
+            R = float(NOZ.radius(x, dt))
+            f = predict_points(m, np.full_like(eta, x), eta * R, dt)
+            flux = 2 * np.pi * np.trapezoid(f["u"] * eta * R, eta * R)
+            assert flux == pytest.approx(np.pi / 4, rel=1e-6)
 
 
 def test_poiseuille_is_exact_solution_of_residual_operator():

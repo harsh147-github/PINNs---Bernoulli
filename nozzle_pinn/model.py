@@ -1,34 +1,37 @@
 """Neural network and hard-constrained field ansatz (README §4).
 
-The network itself is a plain MLP  N(x_hat, s_hat, d_hat) -> (N_u, N_v, N_p).
+The network itself is an MLP  N(x_hat, s_hat, d_hat) -> (N_psi, N_p).
 Its raw outputs are never used directly; they are wrapped in an *ansatz* that
-satisfies every Dirichlet condition EXACTLY for any network weights:
+satisfies mass conservation and every Dirichlet condition EXACTLY, for any
+network weights.
 
-    eta  = r / R(x; dt)                (0 on the axis, 1 on the wall)
-    U_m  = (R_in / R)^2                (quasi-1D mean velocity, mass balance)
-    xi   = x / L                       (0 at the inlet, 1 at the outlet)
+Velocity comes from the Stokes stream function psi (axisymmetric flow):
 
-    u = (1 - eta^2) U_m [ 2           + xi N_u ]
-    v = eta (1 - eta^2) U_m [ 2 R'    + xi N_v ]
-    p = p_1D(x; dt)   + (1 - xi) dt^-4 N_p
+    u = (1/r) d psi/dr,     v = -(1/r) d psi/dx      =>  du/dx + dv/dr + v/r = 0
 
-    p_1D = (1 - U_m^2) + (32/Re) int_x^L U_m / D^2 dx'     (quasi-1D prior)
+so continuity holds identically. With s = eta^2 = (r/R(x;dt))^2 and
+xi = x / L we write psi = s * H and
 
-* wall  (eta = 1)  : u = v = 0                    (no-slip)
-* inlet (xi = 0)   : u = 2 (1 - eta^2), v = 0     (Poiseuille, mean 1)
-* axis  (eta = 0)  : v = 0 and u, p even in r     (symmetry)
-* outlet (xi = 1)  : p = 0                        (reference pressure)
+    H(x, s; dt) = 1/8 [ (2 - s)  +  xi^2 (1 - s)^2 N_psi ]
+    p           = p_1D(x; dt)  +  (1 - xi) dt^-4 N_p
+    p_1D        = (1 - U_m^2) + (32/Re) int_x^L U_m / D^2 dx'   (quasi-1D prior)
 
-The ``2 U_m (1 - eta^2)`` / ``2 U_m R' eta (1 - eta^2)`` part is a locally
-fully-developed flow that already conserves mass exactly, and ``p_1D`` is the
-classic pipe-hydraulics estimate (1-D Bernoulli + Hagen–Poiseuille friction,
-zero at the outlet; exact for the straight pipe). The network only learns the
-*correction* to this engineering prior, which is O(1) for every throat
-diameter because each term is scaled by the local velocity scale U_m (and the
-pressure correction by the throat dynamic-pressure scale dt^-4).
+* axis  (s = 0)  : psi = 0, psi ~ r^2 (regular), v = 0
+* wall  (s = 1)  : psi = 1/8 (no flow through the wall) and d psi/ds = 0
+                   (no-slip): u = v = 0
+* every section  : volume flux = 2 pi psi_wall = pi/4 = inlet flux, EXACTLY
+* inlet (xi = 0) : psi = (2s - s^2)/8 -> u = 2 (1 - eta^2) Poiseuille, v = 0
+                   (xi^2 also kills d/dx of the correction there)
+* outlet (xi = 1): p = 0
 
-The network sees s = eta^2 (not eta), which makes u, v/eta and p smooth even
-functions of r — the axis regularity condition comes for free.
+With N = 0 the field is a locally fully developed pipe flow
+u = 2 U_m (1 - eta^2), v = eta R' u, plus pipe-hydraulics pressure p_1D
+(1-D Bernoulli + Hagen–Poiseuille friction). The network learns the
+correction to this engineering prior.
+
+To stay regular on the axis without dividing by r:
+    u = 2 F_s / R^2,   v = -(r / R^2) (H_x - 2 R' F_s / R),   F_s = H + s H_s
+where H_x, H_s are partial derivatives (autograd).
 """
 from __future__ import annotations
 
@@ -96,17 +99,19 @@ class ModifiedMLP(nn.Module):
 
 
 class NozzlePINN(nn.Module):
-    """Parametric surrogate (x, r, dt) -> (u, v, p) with hard boundary conditions."""
+    """Parametric surrogate (x, r, dt) -> (u, v, p) with hard constraints.
+
+    Velocity comes from a Stokes stream function, so mass is conserved
+    exactly (see the module docstring).
+    """
 
     def __init__(self, noz: Nozzle, Re: float, width: int = 64, depth: int = 6,
-                 n_quad: int = 64, architecture: str = "modified_mlp",
-                 correction_scale: str = "local") -> None:
+                 n_quad: int = 64, architecture: str = "modified_mlp") -> None:
         super().__init__()
-        self.correction_scale = correction_scale
         self.noz = noz
         self.Re = float(Re)
         net_cls = {"mlp": MLP, "modified_mlp": ModifiedMLP}[architecture]
-        self.mlp = net_cls(3, 3, width, depth)
+        self.mlp = net_cls(3, 2, width, depth)          # outputs (N_psi, N_p)
         # Zero output layer: training starts EXACTLY from the engineering prior
         # (locally fully developed flow + quasi-1D pressure) instead of noise.
         last = self.mlp.out if architecture == "modified_mlp" else self.mlp.net[-1]
@@ -141,27 +146,36 @@ class NozzlePINN(nn.Module):
         dh = 2.0 * (dt - n.dt_min) / (n.dt_max - n.dt_min) - 1.0
         return torch.stack([xh, sh, dh], dim=-1)
 
+    def stream_H(self, xh: torch.Tensor, s: torch.Tensor, dt: torch.Tensor):
+        """H(x, s; dt) with psi = s H, and the pressure network output N_p."""
+        xi = xh / self.noz.length
+        N = self.mlp(self.normalise(xh, s, dt))
+        H = 0.125 * ((2.0 - s) + xi * xi * (1.0 - s) ** 2 * N[:, 0])
+        return H, N[:, 1]
+
     def forward(self, x: torch.Tensor, r: torch.Tensor, dt: torch.Tensor) -> Dict[str, torch.Tensor]:
         """Evaluate the constrained fields at points (x, r) of nozzle ``dt``.
 
         ``x``, ``r`` and ``dt`` are 1-D tensors of equal length. Autograd
-        flows through the geometry, so derivatives w.r.t. x and r of the
-        returned fields are exact derivatives in physical coordinates.
+        flows through the geometry and the stream function, so derivatives of
+        the returned u, v, p w.r.t. x and r are exact derivatives in physical
+        coordinates. Works with or without an outer ``torch.no_grad``.
         """
         n = self.noz
-        R = n.radius(x, dt)
-        dR = n.dradius_dx(x, dt)
-        eta = r / R
-        s = eta * eta
-        Um = (0.5 / R) ** 2
-        xi = x / n.length
-        N = self.mlp(self.normalise(x, s, dt))
-        Nu, Nv, Np = N[:, 0], N[:, 1], N[:, 2]
-        wall = 1.0 - s
-        # scale of the learned correction: local mean velocity, or the jet
-        # velocity (stays at the throat value downstream of the throat)
-        Us = Um if self.correction_scale == "local" else n.jet_velocity(x, dt)
-        u = wall * (2.0 * Um + xi * Us * Nu)
-        v = eta * wall * (2.0 * Um * dR + xi * Us * Nv)
-        p = self.p_prior(x, dt) + (1.0 - xi) * dt ** (-4) * Np
-        return {"u": u, "v": v, "p": p, "R": R, "Um": Um}
+        with torch.enable_grad():
+            if not (x.requires_grad or r.requires_grad):
+                x = x.detach().requires_grad_(True)
+            R = n.radius(x, dt)
+            dR = n.dradius_dx(x, dt)
+            s = (r / R) ** 2
+            # separate handles so autograd can give PARTIAL derivatives of H
+            # w.r.t. x at fixed s and w.r.t. s at fixed x
+            xh = x * 1.0
+            sh = s * 1.0
+            H, Np = self.stream_H(xh, sh, dt)
+            H_x, H_s = torch.autograd.grad(H, (xh, sh), torch.ones_like(H), create_graph=True)
+        F_s = H + sh * H_s                       # d psi / d s
+        u = 2.0 * F_s / (R * R)                  # = (1/r) d psi/dr
+        v = -(r / (R * R)) * (H_x - 2.0 * dR * F_s / R)   # = -(1/r) d psi/dx
+        p = self.p_prior(x, dt) + (1.0 - x / n.length) * dt ** (-4) * Np
+        return {"u": u, "v": v, "p": p, "psi": s * H, "R": R, "Um": (0.5 / R) ** 2}
