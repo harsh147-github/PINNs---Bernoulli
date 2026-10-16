@@ -4,3 +4,6 @@
 [adam    100] loss=4.133e-02 cont=2.70e-03 mx=3.60e-02 mr=2.47e-03 out=1.23e-04 lr=1.0e-03 t=57s
 [adam    200] loss=2.487e-02 cont=2.31e-03 mx=1.91e-02 mr=3.37e-03 out=8.46e-05 lr=1.0e-03 t=107s
 [adam    300] loss=1.170e-02 cont=1.52e-03 mx=8.29e-03 mr=1.87e-03 out=1.43e-05 lr=1.0e-03 t=157s
+[adam    400] loss=6.513e-03 cont=1.37e-03 mx=4.15e-03 mr=9.81e-04 out=1.01e-05 lr=1.0e-03 t=207s
+[adam    500] loss=4.869e-03 cont=1.32e-03 mx=2.68e-03 mr=8.63e-04 out=1.02e-05 lr=1.0e-03 t=258s
+   monitor mean_relL2_u=2.004e-01  mean_relL2_p=2.852e-01  max_relL2_u=4.322e-01  max_relL2_p=6.304e-01
