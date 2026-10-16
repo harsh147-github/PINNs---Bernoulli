@@ -24,7 +24,10 @@ RE = float(CFG["physics"]["Re"])
 
 def _model(seed: int = 0) -> NozzlePINN:
     torch.manual_seed(seed)
-    return NozzlePINN(NOZ, 32, 3)
+    m = NozzlePINN(NOZ, RE, 32, 3)
+    for prm in m.last_layer.parameters():  # random (non-zero) output layer
+        torch.nn.init.normal_(prm, std=0.3)
+    return m
 
 
 def _points(n: int, dt: float | None = None, seed: int = 1):
@@ -70,7 +73,7 @@ def test_hard_boundary_conditions_hold_for_random_weights():
 def test_base_ansatz_conserves_mass_exactly():
     """With N = 0 the ansatz is a mass-conserving flow for every nozzle."""
     m = _model()
-    for p in m.mlp.net[-1].parameters():
+    for p in m.last_layer.parameters():
         torch.nn.init.zeros_(p)
     X, d = _points(500)
     res = ns_residuals(m, X, d, RE)
@@ -78,12 +81,11 @@ def test_base_ansatz_conserves_mass_exactly():
 
 
 def test_poiseuille_is_exact_solution_of_residual_operator():
-    """dt = 1 (straight pipe): u = 2(1-4r^2), p = 32 (L - x)/Re zeroes all residuals."""
+    """dt = 1: the prior (u = 2(1-4r^2), p = 32 (L - x)/Re) zeroes all residuals."""
     m = _model()
-    last = m.mlp.net[-1]
+    last = m.last_layer
     torch.nn.init.zeros_(last.weight)
-    with torch.no_grad():
-        last.bias.copy_(torch.tensor([0.0, 0.0, 32.0 * NOZ.length / RE]))
+    torch.nn.init.zeros_(last.bias)  # the quasi-1D prior is already exact here
     X, d = _points(500, dt=1.0)
     res = ns_residuals(m, X, d, RE)
     for k, v in res.items():
@@ -92,7 +94,7 @@ def test_poiseuille_is_exact_solution_of_residual_operator():
 
 def test_stream_function_reaches_one_on_wall():
     m = _model()
-    for p in m.mlp.net[-1].parameters():
+    for p in m.last_layer.parameters():
         torch.nn.init.zeros_(p)
     g = field_grid(m, 0.55, 51, 401)
     assert np.allclose(g["psi"][0], 0.0)

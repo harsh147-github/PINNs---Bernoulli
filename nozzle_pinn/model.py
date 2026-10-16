@@ -10,7 +10,9 @@ satisfies every Dirichlet condition EXACTLY for any network weights:
 
     u = (1 - eta^2) U_m [ 2           + xi N_u ]
     v = eta (1 - eta^2) U_m [ 2 R'    + xi N_v ]
-    p = (1 - U_m^2)   + (1 - xi) dt^-4 N_p
+    p = p_1D(x; dt)   + (1 - xi) dt^-4 N_p
+
+    p_1D = (1 - U_m^2) + (32/Re) int_x^L U_m / D^2 dx'     (quasi-1D prior)
 
 * wall  (eta = 1)  : u = v = 0                    (no-slip)
 * inlet (xi = 0)   : u = 2 (1 - eta^2), v = 0     (Poiseuille, mean 1)
@@ -18,10 +20,12 @@ satisfies every Dirichlet condition EXACTLY for any network weights:
 * outlet (xi = 1)  : p = 0                        (reference pressure)
 
 The ``2 U_m (1 - eta^2)`` / ``2 U_m R' eta (1 - eta^2)`` part is a locally
-fully-developed flow that already conserves mass exactly; the network only
-learns the *correction* to it, which is O(1) for every throat diameter
-because each term is scaled by the local velocity scale U_m (and the pressure
-correction by the throat dynamic-pressure scale dt^-4).
+fully-developed flow that already conserves mass exactly, and ``p_1D`` is the
+classic pipe-hydraulics estimate (1-D Bernoulli + Hagen–Poiseuille friction,
+zero at the outlet; exact for the straight pipe). The network only learns the
+*correction* to this engineering prior, which is O(1) for every throat
+diameter because each term is scaled by the local velocity scale U_m (and the
+pressure correction by the throat dynamic-pressure scale dt^-4).
 
 The network sees s = eta^2 (not eta), which makes u, v/eta and p smooth even
 functions of r — the axis regularity condition comes for free.
@@ -30,6 +34,7 @@ from __future__ import annotations
 
 from typing import Dict
 
+import numpy as np
 import torch
 from torch import nn
 
@@ -59,13 +64,71 @@ class MLP(nn.Module):
         return self.net(z)
 
 
+class ModifiedMLP(nn.Module):
+    """'Modified MLP' of Wang, Teng & Perdikaris (2021, SIAM J. Sci. Comput.).
+
+    Two encoders U = tanh(W_u z), V = tanh(W_v z) are mixed into every hidden
+    layer:  H <- (1 - Z) * U + Z * V  with  Z = tanh(W_k H).  The multiplicative
+    skip connections mitigate the unbalanced back-propagated gradients that make
+    plain MLP PINNs stall on Navier–Stokes problems.
+    """
+
+    def __init__(self, n_in: int, n_out: int, width: int, depth: int) -> None:
+        super().__init__()
+        self.enc_u = nn.Linear(n_in, width)
+        self.enc_v = nn.Linear(n_in, width)
+        self.inp = nn.Linear(n_in, width)
+        self.hidden = nn.ModuleList(nn.Linear(width, width) for _ in range(depth - 1))
+        self.out = nn.Linear(width, n_out)
+        for lin in [self.enc_u, self.enc_v, self.inp, *self.hidden, self.out]:
+            nn.init.xavier_normal_(lin.weight)
+            nn.init.zeros_(lin.bias)
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        U = torch.tanh(self.enc_u(z))
+        V = torch.tanh(self.enc_v(z))
+        H = torch.tanh(self.inp(z))
+        H = (1.0 - H) * U + H * V
+        for lin in self.hidden:
+            Z = torch.tanh(lin(H))
+            H = (1.0 - Z) * U + Z * V
+        return self.out(H)
+
+
 class NozzlePINN(nn.Module):
     """Parametric surrogate (x, r, dt) -> (u, v, p) with hard boundary conditions."""
 
-    def __init__(self, noz: Nozzle, width: int = 64, depth: int = 6) -> None:
+    def __init__(self, noz: Nozzle, Re: float, width: int = 64, depth: int = 6,
+                 n_quad: int = 64, architecture: str = "modified_mlp") -> None:
         super().__init__()
         self.noz = noz
-        self.mlp = MLP(3, 3, width, depth)
+        self.Re = float(Re)
+        net_cls = {"mlp": MLP, "modified_mlp": ModifiedMLP}[architecture]
+        self.mlp = net_cls(3, 3, width, depth)
+        # Zero output layer: training starts EXACTLY from the engineering prior
+        # (locally fully developed flow + quasi-1D pressure) instead of noise.
+        last = self.mlp.out if architecture == "modified_mlp" else self.mlp.net[-1]
+        nn.init.zeros_(last.weight)
+        nn.init.zeros_(last.bias)
+        self.last_layer = last
+        t, w = np.polynomial.legendre.leggauss(n_quad)
+        self.register_buffer("gl_t", torch.as_tensor(t, dtype=torch.get_default_dtype()))
+        self.register_buffer("gl_w", torch.as_tensor(w, dtype=torch.get_default_dtype()))
+
+    def p_prior(self, x: torch.Tensor, dt: torch.Tensor) -> torch.Tensor:
+        """Quasi-1D pressure: Bernoulli on the mean velocity + Poiseuille friction.
+
+        The friction integral int_x^L 32 U_m / (Re D^2) dx' is evaluated with
+        Gauss–Legendre quadrature on [x, L] so it stays differentiable in x.
+        """
+        n = self.noz
+        L = n.length
+        xq = x[:, None] + (L - x)[:, None] * 0.5 * (1.0 + self.gl_t[None, :])
+        D = 2.0 * n.radius(xq, dt[:, None])
+        f = 32.0 / self.Re * n.mean_velocity(xq, dt[:, None]) / (D * D)
+        friction = 0.5 * (L - x) * (f * self.gl_w[None, :]).sum(dim=1)
+        Um = n.mean_velocity(x, dt)
+        return (1.0 - Um * Um) + friction
 
     # ------------------------------------------------------------------
     def normalise(self, x: torch.Tensor, s: torch.Tensor, dt: torch.Tensor) -> torch.Tensor:
@@ -95,5 +158,5 @@ class NozzlePINN(nn.Module):
         wall = 1.0 - s
         u = wall * Um * (2.0 + xi * Nu)
         v = eta * wall * Um * (2.0 * dR + xi * Nv)
-        p = (1.0 - Um * Um) + (1.0 - xi) * dt ** (-4) * Np
+        p = self.p_prior(x, dt) + (1.0 - xi) * dt ** (-4) * Np
         return {"u": u, "v": v, "p": p, "R": R, "Um": Um}

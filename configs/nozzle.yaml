@@ -31,6 +31,8 @@ network:
   hidden_layers: 6
   hidden_width: 64
   activation: tanh
+  architecture: modified_mlp   # 'mlp' or 'modified_mlp' (Wang et al. 2021)
+  quad_nodes: 64          # Gauss-Legendre nodes for the quasi-1D pressure prior
 
 sampling:
   n_interior: 6000        # collocation points per resample
