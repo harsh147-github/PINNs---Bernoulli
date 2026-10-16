@@ -159,7 +159,7 @@ def plot_sweep(sweep: Dict[str, np.ndarray], of_rows: List[Dict[str, float]], dt
             ("u_throat_axis", "throat centre-line velocity u / U_in"),
             ("p_throat_axis", "throat centre-line static pressure"),
             ("dp_total", "total static pressure drop  p_in - p_out"),
-            ("u_min", "min axial velocity (< 0 = recirculation)")]
+            ("recirc_length", "recirculation bubble length / D_in")]
     fig, axes = plt.subplots(3, 2, figsize=(12, 11), constrained_layout=True)
     for ax, (k, lab) in zip(axes.ravel(), keys):
         ax.plot(sweep["dt"], sweep[k], "-", color="C0", lw=2, label=f"PINN ({len(sweep['dt'])} designs)")

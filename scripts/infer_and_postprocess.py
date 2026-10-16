@@ -42,6 +42,10 @@ def section_metrics(x2d, r2d, u, v, p, R, x_throat: float) -> dict:
     so both use the same area-weighted mean over the throat cross-section.
     """
     j = int(np.argmin(np.abs(x2d[0] - x_throat)))
+    # interior only: drop a wall row (eta = 1, where u = 0 exactly) if present
+    interior = slice(None, -1) if np.allclose(u[-1], 0.0) else slice(None)
+    back = (u[interior] < 0).any(axis=0)
+    xb = x2d[0][back]
     r = r2d[:, j]
     q = 0.5 * (u[:, j] ** 2 + v[:, j] ** 2)
     if r[0] > 0:  # cell data: add axis and wall points
@@ -55,7 +59,8 @@ def section_metrics(x2d, r2d, u, v, p, R, x_throat: float) -> dict:
         "q_throat_mean": float(q_mean),
         "dp_total": float(p[0, 0]),
         "p_min": float(p.min()),
-        "u_min": float(u.min()),
+        "u_min": float(u[interior].min()),
+        "recirc_length": float(xb.max() - xb.min()) if back.any() else 0.0,
     }
 
 
