@@ -1,1 +1,0 @@
-[openfoam] d_t=0.400  cells=125000  iters=812  solve=479.7s  res(Ux,p)=(1.4e-07,9.9e-09)
