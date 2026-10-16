@@ -1,0 +1,3 @@
+[train] monitoring against 7 OpenFOAM cases (d_t = 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00)
+[adam      0] loss=5.815e-02 cont=1.87e-32 mx=5.53e-02 mr=2.83e-03 out=0.00e+00 lr=1.0e-03 t=1s
+   monitor mean_relL2_u=1.682e-01  mean_relL2_p=2.821e-01  max_relL2_u=3.534e-01  max_relL2_p=6.121e-01
