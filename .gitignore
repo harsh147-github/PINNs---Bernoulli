@@ -9,3 +9,4 @@ results/paraview/
 results/pinn/checkpoints/
 results_*/
 results/pinn/train_log.txt
+results/openfoam/mesh_study_log.txt
