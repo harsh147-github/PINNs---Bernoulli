@@ -101,7 +101,8 @@ def train(cfg: Dict[str, Any], out_dir: Path,
     Xi = di = Xo = do = None
     for ep in range(n_adam):
         if ep % resample == 0:
-            Xi, di, Xo, do = draw(noz, cfg, gen)
+            # first draw is space-filling; later draws are residual-adaptive
+            Xi, di, Xo, do = draw(noz, cfg, gen, model=model if ep > 0 else None, Re=Re)
         terms = loss_terms(model, Xi, di, Xo, do, Re)
         loss = total_loss(terms, tc)
         opt.zero_grad(set_to_none=True)
@@ -124,7 +125,7 @@ def train(cfg: Dict[str, Any], out_dir: Path,
     n_lbfgs = int(tc["lbfgs_iters"])
     t1 = time.perf_counter()
     if n_lbfgs > 0:
-        Xi, di, Xo, do = draw(noz, cfg, gen, n_interior=int(tc["lbfgs_points"]))
+        Xi, di, Xo, do = draw(noz, cfg, gen, n_interior=int(tc["lbfgs_points"]), model=model, Re=Re)
         lbfgs = torch.optim.LBFGS(model.parameters(), lr=1.0, max_iter=n_lbfgs,
                                   history_size=int(tc["lbfgs_history"]),
                                   tolerance_grad=1e-12, tolerance_change=1e-15,

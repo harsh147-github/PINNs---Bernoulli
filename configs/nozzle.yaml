@@ -40,6 +40,9 @@ sampling:
   wall_fraction: 0.3      # share of interior points pushed into the wall layer
   throat_fraction: 0.3    # share concentrated in converge/throat/diverge
   resample_every: 500     # epochs between fresh collocation draws
+  dt_power: 1.3           # >1 biases design samples toward narrow throats
+  adaptive_fraction: 0.5  # share of points chosen by residual-based adaptive sampling (RAD)
+  adaptive_pool: 4        # candidate pool size / adaptive points
 
 training:
   seed: 1234
