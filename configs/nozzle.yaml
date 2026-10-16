@@ -37,7 +37,7 @@ network:
   quad_nodes: 64          # Gauss-Legendre nodes for the quasi-1D pressure prior
 
 sampling:
-  n_interior: 4000        # collocation points per resample
+  n_interior: 3000        # collocation points per resample
   n_outlet: 400           # outlet-plane points (soft outflow condition)
   wall_fraction: 0.3      # share of interior points pushed into the wall layer
   throat_fraction: 0.3    # share concentrated in converge/throat/diverge
@@ -48,19 +48,19 @@ sampling:
 
 training:
   seed: 1234
-  adam_epochs: 12000
+  adam_epochs: 9000
   adam_lr: 1.0e-3
   lr_decay_every: 1500
   lr_decay_factor: 0.8
-  lbfgs_iters: 2000
+  lbfgs_iters: 1500
   lbfgs_history: 50
-  lbfgs_points: 8000      # fixed collocation set for the L-BFGS stage
+  lbfgs_points: 6000      # fixed collocation set for the L-BFGS stage
   w_continuity: 1.0
   w_momentum: 1.0
   w_outlet: 1.0
   log_every: 100
   checkpoint_every: 5000
-  threads: 3
+  threads: 4
 
 inference:
   n_designs: 121          # throat diameters in the amortised sweep
