@@ -8,3 +8,4 @@ openfoam/cases/
 results/paraview/
 results/pinn/checkpoints/
 results_*/
+results/pinn/train_log.txt
