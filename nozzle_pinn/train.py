@@ -34,9 +34,10 @@ def build_model(cfg: Dict[str, Any]) -> NozzlePINN:
                       str(net.get("correction_scale", "local")))
 
 
-def loss_terms(model: NozzlePINN, Xi, di, Xo, do, Re: float) -> Dict[str, torch.Tensor]:
+def loss_terms(model: NozzlePINN, Xi, di, Xo, do, Re: float,
+               scale: str = "local") -> Dict[str, torch.Tensor]:
     """Mean-squared residual of every equation."""
-    res = ns_residuals(model, Xi, di, Re)
+    res = ns_residuals(model, Xi, di, Re, scale)
     out = outlet_residuals(model, Xo, do)
     return {
         "cont": (res["cont"] ** 2).mean(),
@@ -62,6 +63,7 @@ def train(cfg: Dict[str, Any], out_dir: Path,
     """
     tc = cfg["training"]
     Re = float(cfg["physics"]["Re"])
+    rscale = str(tc.get("residual_scale", "local"))
     torch.manual_seed(int(tc["seed"]))
     np.random.seed(int(tc["seed"]))
     torch.set_num_threads(int(tc["threads"]))
@@ -104,7 +106,7 @@ def train(cfg: Dict[str, Any], out_dir: Path,
         if ep % resample == 0:
             # first draw is space-filling; later draws are residual-adaptive
             Xi, di, Xo, do = draw(noz, cfg, gen, model=model if ep > 0 else None, Re=Re)
-        terms = loss_terms(model, Xi, di, Xo, do, Re)
+        terms = loss_terms(model, Xi, di, Xo, do, Re, rscale)
         loss = total_loss(terms, tc)
         opt.zero_grad(set_to_none=True)
         loss.backward()
@@ -135,7 +137,7 @@ def train(cfg: Dict[str, Any], out_dir: Path,
 
         def closure():
             lbfgs.zero_grad(set_to_none=True)
-            terms = loss_terms(model, Xi, di, Xo, do, Re)
+            terms = loss_terms(model, Xi, di, Xo, do, Re, rscale)
             loss = total_loss(terms, tc)
             loss.backward()
             k = state["n"]
@@ -154,7 +156,7 @@ def train(cfg: Dict[str, Any], out_dir: Path,
         hist["lbfgs_evaluations"] = state["n"]
     t_lbfgs = time.perf_counter() - t1
 
-    terms = loss_terms(model, Xi, di, Xo, do, Re)
+    terms = loss_terms(model, Xi, di, Xo, do, Re, rscale)
     final = float(total_loss(terms, tc).detach())
     hist["final_loss"] = final
     hist["final_terms"] = {k: float(v.detach()) for k, v in terms.items()}

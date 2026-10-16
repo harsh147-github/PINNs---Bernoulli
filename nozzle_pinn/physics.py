@@ -30,7 +30,8 @@ def _grad(f: torch.Tensor, X: torch.Tensor) -> torch.Tensor:
     return torch.autograd.grad(f, X, torch.ones_like(f), create_graph=True)[0]
 
 
-def ns_residuals(model: NozzlePINN, X: torch.Tensor, dt: torch.Tensor, Re: float) -> Dict[str, torch.Tensor]:
+def ns_residuals(model: NozzlePINN, X: torch.Tensor, dt: torch.Tensor, Re: float,
+                 scale: str = "local") -> Dict[str, torch.Tensor]:
     """Scaled continuity / momentum residuals at collocation points.
 
     Parameters
@@ -39,6 +40,10 @@ def ns_residuals(model: NozzlePINN, X: torch.Tensor, dt: torch.Tensor, Re: float
     X : (N, 2) tensor of (x, r) with ``requires_grad=True``
     dt : (N,) throat-diameter ratio of each point's nozzle
     Re : Reynolds number
+    scale : "local" divides by the local section scales (U_m, R); "design"
+        divides every point of a nozzle by the same throat scales
+        (U_t = dt^-2, R_t = dt/2), so momentum imbalance is weighted
+        uniformly along the pipe — the pressure drop is the integral of it.
     """
     out = model(X[:, 0], X[:, 1], dt)
     u, v, p, R, Um = out["u"], out["v"], out["p"], out["R"], out["Um"]
@@ -57,6 +62,8 @@ def ns_residuals(model: NozzlePINN, X: torch.Tensor, dt: torch.Tensor, Re: float
     mom_x = u * u_x + v * u_r + p_x - nu * (u_xx + u_rr + u_r / r)
     mom_r = u * v_x + v * v_r + p_r - nu * (v_xx + v_rr + v_r / r - v / (r * r))
 
+    if scale == "design":
+        Um, R = dt ** (-2), 0.5 * dt
     sc = Um / R
     sm = Um * Um / R + nu * Um / (R * R)
     return {"cont": cont / sc, "mom_x": mom_x / sm, "mom_r": mom_r / sm}

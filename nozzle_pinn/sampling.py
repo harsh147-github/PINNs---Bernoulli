@@ -81,7 +81,7 @@ def draw(noz: Nozzle, cfg: Dict[str, Any], gen: torch.Generator, n_interior: int
         from .physics import ns_residuals  # local import avoids a cycle
         Xp, dp = sample_interior(noz, int(s["adaptive_pool"]) * n_ad, wf, tf, gen, dt_power=kp)
         Xp.requires_grad_(True)
-        res = ns_residuals(model, Xp, dp, float(Re))
+        res = ns_residuals(model, Xp, dp, float(Re), str(cfg["training"].get("residual_scale", "local")))
         e = (res["cont"] ** 2 + res["mom_x"] ** 2 + res["mom_r"] ** 2).detach()
         prob = e / e.mean() + 1.0
         idx = torch.multinomial(prob, n_ad, replacement=False, generator=gen)
