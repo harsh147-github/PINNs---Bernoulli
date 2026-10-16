@@ -13,16 +13,18 @@ geometry:
   L_converge: 1.5     # converging section
   L_throat: 1.5       # straight throat
   L_diverge: 2.5      # diverging section (diffuser)
-  L_outlet: 2.0       # straight outlet pipe (lets the flow re-develop)
+  L_outlet: 6.0       # straight outlet pipe: long enough that the throat jet
+                      # and diffuser recirculation have died out (fully developed
+                      # outflow is TRUE for every design, see README §7.2)
   # Design parameter: throat diameter d_t = D_throat / D_in
   dt_min: 0.40        # most constricted nozzle in the design space
   dt_max: 1.00        # d_t = 1 is a straight pipe (exact Poiseuille check)
   dt_baseline: 0.70   # "d1" in the sketch — the reference design
 
 physics:
-  Re: 100.0           # Reynolds number U_mean_in * D_in / nu (laminar)
+  Re: 50.0            # Reynolds number U_mean_in * D_in / nu (laminar)
   # Physical realisation used ONLY to print SI numbers in reports:
-  # water at 20 C in a 10 mm pipe at 1 cm/s gives Re = 100.
+  # water at 20 C in a 10 mm pipe at 5 mm/s gives Re = 50.
   rho_SI: 998.2       # kg/m^3
   nu_SI: 1.0e-6       # m^2/s
   D_in_m: 0.01        # m
@@ -58,17 +60,17 @@ training:
   w_outlet: 1.0
   log_every: 100
   checkpoint_every: 5000
-  threads: 4
+  threads: 3
 
 inference:
   n_designs: 121          # throat diameters in the amortised sweep
-  nx: 341                 # axial grid points for field output
+  nx: 501                 # axial grid points for field output
   neta: 61                # radial grid points (in eta = r / R(x))
   plot_designs: [0.40, 0.55, 0.70, 0.85, 1.00]   # field figures produced
 
 openfoam:
   designs: [0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00]   # cases run with simpleFoam
-  nx: 425                 # axial cells
+  nx: 625                 # axial cells (50 per inlet diameter)
   nr: 50                  # radial cells
   wall_grading: 0.25      # last-cell / first-cell size ratio toward the wall
   wedge_angle_deg: 5.0
