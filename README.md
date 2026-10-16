@@ -534,9 +534,19 @@ A run is fully defined by (config, seed, code version).
   formula itself, giving `∂p_1D/∂x = −32 U_m/(Re D²) − ∂(U_m²)/∂x`
   automatically.
 - `NozzlePINN.normalise` — scales the inputs to [−1, 1]³.
-- `NozzlePINN.forward` — computes `R, R', η, U_m, ξ`, calls the network, and
-  assembles `u, v, p` with the ansatz of §4.2. It also returns `R` and `U_m`
-  for residual scaling.
+- `NozzlePINN.stream_H` — runs the network on `(x, s, d_t)` and returns
+  `H = ⅛[(2 − s) + ξ²(1 − s)² N_ψ]` and the raw pressure output `N_p`.
+- `NozzlePINN.forward`
+  - Computes `R, R'` and `s = (r/R)²`.
+  - Creates the separate handles `xh, sh` and calls `stream_H`.
+  - Takes **one** autograd call for the partials `H_x, H_s`.
+  - Builds `u = 2F_s/R²` and `v = −(r/R²)(H_x − 2R'F_s/R)` (the axis-regular
+    form of `(1/r)∂ψ/∂r` and `−(1/r)∂ψ/∂x`) and `p = p_1D + (1 − ξ)d_t⁻⁴N_p`.
+  - Runs inside `torch.enable_grad()`. Velocities are themselves derivatives,
+    so even inference (`predict_points` under `no_grad`) needs this one
+    gradient. During training the graph is kept (`create_graph=True`), so
+    `physics.py` can differentiate `u, v` further.
+  - Returns `u, v, p, ψ, R, U_m`.
 
 ### `nozzle_pinn/physics.py`
 - `_grad(f, X)` — one autograd call with `create_graph=True`, so the result
@@ -545,10 +555,13 @@ A run is fully defined by (config, seed, code version).
 - `ns_residuals(model, X, dt, Re)` — `X = (x, r)` is a leaf tensor with
   `requires_grad=True`.
   - One `_grad` per field gives both `∂/∂x` and `∂/∂r`.
-  - Four more give `u_xx, u_rr, v_xx, v_rr`. `p` only needs first
-    derivatives, so its second derivatives are never computed.
+  - Four more give `u_xx, u_rr, v_xx, v_rr`. Since `u, v` are already first
+    derivatives of `ψ`, these are third derivatives of the network. `p` only
+    needs first derivatives.
   - It then writes equations (1)–(3) literally and divides by the local
-    scales.
+    scales (`scale="local"`), or by per-design throat scales
+    (`scale="design"`, an option kept for experiments). Continuity is
+    computed as a check; it is zero to round-off.
 - `outlet_residuals` — `∂u/∂x` and `v` on the outlet plane: the soft
   "fully developed outflow" condition, matching OpenFOAM's `zeroGradient`.
 
@@ -559,7 +572,14 @@ A run is fully defined by (config, seed, code version).
   `r = R(x; d_t)·η`.
 - `sample_outlet` — points on `x = L`.
 - `draw` — one complete set from the config, with `requires_grad=True` on
-  the coordinates.
+  the coordinates. Given the current `model`, it implements **RAD**:
+  1. Draws a candidate pool `adaptive_pool` times larger.
+  2. Evaluates the squared momentum residual there.
+  3. Picks `adaptive_fraction` of the points with `torch.multinomial`, using
+     probability `∝ e/mean(e) + 1`.
+
+  Every resample after the first is adaptive, and so is the L-BFGS point
+  set.
 
 ### `nozzle_pinn/train.py`
 - `build_model(cfg)` — sets float64 and constructs `NozzlePINN` from the
@@ -638,11 +658,14 @@ See §7.
 ### `tests/test_nozzle_pinn.py`
 1. Geometry: end radii, throat radius, and analytic slope = finite difference.
 2. Every hard boundary condition holds to 1e-12 for random network weights.
-3. The prior flow conserves mass exactly: the continuity residual is 0.
-4. Exact Poiseuille flow gives zero residual in all three equations. This
-   validates the `1/r` terms and the autograd plumbing.
-5. The stream function is 0 on the axis and 1 on the wall.
-6. The OpenFOAM list parser handles both scalar and vector lists.
+3. Continuity is satisfied to round-off for random weights (stream function).
+4. The volume flux through 15 cross-sections of 3 nozzles equals π/4 to 1e-6,
+   for random weights.
+5. Exact Poiseuille flow (the prior at d_t = 1) gives zero residual in all
+   three equations. This validates the `1/r` terms, the third-derivative
+   autograd chain and the pressure prior.
+6. The integrated stream function is 0 on the axis and 1 on the wall.
+7. The OpenFOAM list parser handles both scalar and vector lists.
 
 ---
 
