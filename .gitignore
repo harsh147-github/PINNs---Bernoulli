@@ -1,7 +1,10 @@
 __pycache__/
 .venv/
-results/
-results_*/
-*.log
-.DS_Store
 .pytest_cache/
+.DS_Store
+*.log
+# generated, large or reproducible outputs
+openfoam/cases/
+results/paraview/
+results/pinn/checkpoints/
+results_*/

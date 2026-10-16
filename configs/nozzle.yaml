@@ -1,0 +1,71 @@
+# =============================================================================
+# Parametric PINN nozzle solver — single source of truth for every number.
+# All quantities are NON-DIMENSIONAL unless the key ends in _m / _SI:
+#   length   / D_in        (inlet diameter = 1)
+#   velocity / U_mean_in   (mean inlet velocity = 1)
+#   pressure / (rho U^2)   (kinematic pressure, same as OpenFOAM's p for U=1)
+# =============================================================================
+
+geometry:
+  # Axial segment lengths (in inlet diameters). Wall radius blends smoothly
+  # (C2 "smootherstep") between segments, see README §3.1.
+  L_inlet: 1.0        # straight inlet pipe
+  L_converge: 1.5     # converging section
+  L_throat: 1.5       # straight throat
+  L_diverge: 2.5      # diverging section (diffuser)
+  L_outlet: 2.0       # straight outlet pipe (lets the flow re-develop)
+  # Design parameter: throat diameter d_t = D_throat / D_in
+  dt_min: 0.40        # most constricted nozzle in the design space
+  dt_max: 1.00        # d_t = 1 is a straight pipe (exact Poiseuille check)
+  dt_baseline: 0.70   # "d1" in the sketch — the reference design
+
+physics:
+  Re: 100.0           # Reynolds number U_mean_in * D_in / nu (laminar)
+  # Physical realisation used ONLY to print SI numbers in reports:
+  # water at 20 C in a 10 mm pipe at 1 cm/s gives Re = 100.
+  rho_SI: 998.2       # kg/m^3
+  nu_SI: 1.0e-6       # m^2/s
+  D_in_m: 0.01        # m
+
+network:
+  hidden_layers: 6
+  hidden_width: 64
+  activation: tanh
+
+sampling:
+  n_interior: 6000        # collocation points per resample
+  n_outlet: 400           # outlet-plane points (soft outflow condition)
+  wall_fraction: 0.3      # share of interior points pushed into the wall layer
+  throat_fraction: 0.3    # share concentrated in converge/throat/diverge
+  resample_every: 500     # epochs between fresh collocation draws
+
+training:
+  seed: 1234
+  adam_epochs: 15000
+  adam_lr: 1.0e-3
+  lr_decay_every: 1500
+  lr_decay_factor: 0.8
+  lbfgs_iters: 3000
+  lbfgs_history: 50
+  lbfgs_points: 12000     # fixed collocation set for the L-BFGS stage
+  w_continuity: 1.0
+  w_momentum: 1.0
+  w_outlet: 1.0
+  log_every: 100
+  checkpoint_every: 5000
+  threads: 4
+
+inference:
+  n_designs: 121          # throat diameters in the amortised sweep
+  nx: 341                 # axial grid points for field output
+  neta: 61                # radial grid points (in eta = r / R(x))
+  plot_designs: [0.40, 0.55, 0.70, 0.85, 1.00]   # field figures produced
+
+openfoam:
+  designs: [0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00]   # cases run with simpleFoam
+  nx: 425                 # axial cells
+  nr: 50                  # radial cells
+  wall_grading: 0.25      # last-cell / first-cell size ratio toward the wall
+  wedge_angle_deg: 5.0
+  max_iters: 3000
+  residual_tol: 1.0e-8
