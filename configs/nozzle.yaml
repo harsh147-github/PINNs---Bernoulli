@@ -54,7 +54,7 @@ training:
   lr_decay_factor: 0.8
   lbfgs_iters: 1500
   lbfgs_history: 50
-  lbfgs_points: 6000      # fixed collocation set for the L-BFGS stage
+  lbfgs_points: 4000      # fixed (residual-adapted) collocation set for L-BFGS
   w_continuity: 1.0
   w_momentum: 1.0
   w_outlet: 1.0

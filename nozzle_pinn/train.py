@@ -54,11 +54,17 @@ def total_loss(terms: Dict[str, torch.Tensor], tc: Dict[str, Any]) -> torch.Tens
 
 def train(cfg: Dict[str, Any], out_dir: Path,
           monitor: Optional[Callable[[NozzlePINN], Dict[str, float]]] = None,
-          monitor_every: int = 500) -> Dict[str, Any]:
+          monitor_every: int = 500, resume: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Train the parametric PINN; return the history dictionary.
 
-    Writes ``checkpoints/*.pt``, ``history.json`` and ``model_final.pt`` to
-    ``out_dir``. Wall-clock time for each stage is recorded.
+    Writes ``checkpoints/*.pt`` (including ``adam_final.pt`` before L-BFGS),
+    ``history.json`` and ``model_final.pt`` to ``out_dir``. Wall-clock time
+    for each stage is recorded.
+
+    ``resume`` (optional) continues an interrupted run:
+    ``{"state_dict": path, "start_epoch": int, "time_offset": seconds already
+    spent, "history": earlier history dict}``. The learning-rate schedule is
+    fast-forwarded to ``start_epoch``; the Adam moment estimates restart.
     """
     tc = cfg["training"]
     Re = float(cfg["physics"]["Re"])
@@ -70,11 +76,20 @@ def train(cfg: Dict[str, Any], out_dir: Path,
 
     model = build_model(cfg)
     noz = model.noz
+    start_epoch, t_offset = 0, 0.0
+    if resume:
+        model.load_state_dict(torch.load(resume["state_dict"], map_location="cpu"))
+        start_epoch = int(resume["start_epoch"])
+        t_offset = float(resume["time_offset"])
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "checkpoints").mkdir(exist_ok=True)
 
     hist: Dict[str, Any] = {"epoch": [], "time_s": [], "loss": [], "cont": [], "mom_x": [],
                             "mom_r": [], "outlet": [], "lr": [], "stage": [], "monitor": []}
+
+    if resume and resume.get("history"):
+        for k, v in resume["history"].items():
+            hist[k] = list(v)
 
     def log(ep: int, stage: str, terms: Dict[str, torch.Tensor], loss: torch.Tensor, lr: float, t: float):
         hist["epoch"].append(ep)
@@ -97,12 +112,15 @@ def train(cfg: Dict[str, Any], out_dir: Path,
     # ------------------------------ Adam -----------------------------------
     opt = torch.optim.Adam(model.parameters(), lr=float(tc["adam_lr"]))
     sched = torch.optim.lr_scheduler.StepLR(opt, int(tc["lr_decay_every"]), float(tc["lr_decay_factor"]))
+    for _ in range(start_epoch):  # fast-forward the schedule when resuming
+        opt.step()
+        sched.step()
     n_adam = int(tc["adam_epochs"])
     resample = int(cfg["sampling"]["resample_every"])
-    t0 = time.perf_counter()
+    t0 = time.perf_counter() - t_offset
     Xi = di = Xo = do = None
-    for ep in range(n_adam):
-        if ep % resample == 0:
+    for ep in range(start_epoch, n_adam):
+        if ep % resample == 0 or Xi is None:
             # first draw is space-filling; later draws are residual-adaptive
             Xi, di, Xo, do = draw(noz, cfg, gen, model=model if ep > 0 else None, Re=Re)
         terms = loss_terms(model, Xi, di, Xo, do, Re, rscale)
@@ -122,6 +140,7 @@ def train(cfg: Dict[str, Any], out_dir: Path,
         if (ep + 1) % int(tc["checkpoint_every"]) == 0:
             torch.save(model.state_dict(), out_dir / "checkpoints" / f"adam_{ep + 1:06d}.pt")
     t_adam = time.perf_counter() - t0
+    torch.save(model.state_dict(), out_dir / "checkpoints" / "adam_final.pt")
 
     # ------------------------------ L-BFGS ---------------------------------
     n_lbfgs = int(tc["lbfgs_iters"])

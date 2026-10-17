@@ -80,9 +80,14 @@ def draw(noz: Nozzle, cfg: Dict[str, Any], gen: torch.Generator, n_interior: int
     if n_ad > 0:
         from .physics import ns_residuals  # local import avoids a cycle
         Xp, dp = sample_interior(noz, int(s["adaptive_pool"]) * n_ad, wf, tf, gen, dt_power=kp)
-        Xp.requires_grad_(True)
-        res = ns_residuals(model, Xp, dp, float(Re), str(cfg["training"].get("residual_scale", "local")))
-        e = (res["cont"] ** 2 + res["mom_x"] ** 2 + res["mom_r"] ** 2).detach()
+        # evaluate the pool in chunks: the third-derivative graph is large
+        scale = str(cfg["training"].get("residual_scale", "local"))
+        chunks = []
+        for Xc, dc in zip(Xp.split(2000), dp.split(2000)):
+            res = ns_residuals(model, Xc.clone().requires_grad_(True), dc, float(Re), scale)
+            chunks.append((res["cont"] ** 2 + res["mom_x"] ** 2 + res["mom_r"] ** 2).detach())
+            del res
+        e = torch.cat(chunks)
         prob = e / e.mean() + 1.0
         idx = torch.multinomial(prob, n_ad, replacement=False, generator=gen)
         Xi = torch.cat([Xi, Xp.detach()[idx]])
