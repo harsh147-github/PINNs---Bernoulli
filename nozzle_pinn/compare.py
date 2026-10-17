@@ -1,4 +1,4 @@
-"""PINN vs OpenFOAM comparison metrics (README §7.3)."""
+"""PINN vs OpenFOAM comparison metrics (README §13.1)."""
 from __future__ import annotations
 
 from pathlib import Path

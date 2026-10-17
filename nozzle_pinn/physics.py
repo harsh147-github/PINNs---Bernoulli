@@ -1,7 +1,7 @@
 """Governing equations: steady, incompressible, axisymmetric Navier–Stokes.
 
 Non-dimensional form (lengths / D_in, velocity / U_mean_in, p / rho U^2),
-cylindrical coordinates (x axial, r radial), no swirl  — README §2:
+cylindrical coordinates (x axial, r radial), no swirl  — README §3, §7:
 
     continuity :  du/dx + dv/dr + v/r                                 = 0
     x-momentum :  u du/dx + v du/dr + dp/dx - (1/Re) (u_xx + u_rr + u_r/r)       = 0

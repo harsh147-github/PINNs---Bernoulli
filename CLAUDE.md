@@ -16,7 +16,7 @@ Current result (committed): mean rel-L2 error vs OpenFOAM 0.40 % (u) / 1.1 % (p)
 worst 1.3 % / 3.9 % at d_t = 0.4; training 3.6 h on 4 CPU cores; inference
 0.26 s per design vs 34.6 s per OpenFOAM run. Velocity comes from a Stokes
 stream function (exact mass conservation) — do not revert to primitive
-(u, v, p) outputs with soft continuity; README §7.3 explains why.
+(u, v, p) outputs with soft continuity; README §5.1 explains why.
 
 ## Layout
 

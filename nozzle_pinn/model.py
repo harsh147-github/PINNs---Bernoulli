@@ -1,4 +1,4 @@
-"""Neural network and hard-constrained field ansatz (README §4).
+"""Neural network and hard-constrained field ansatz (README §5, §6, §8).
 
 The network itself is an MLP  N(x_hat, s_hat, d_hat) -> (N_psi, N_p).
 Its raw outputs are never used directly; they are wrapped in an *ansatz* that

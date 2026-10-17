@@ -8,14 +8,14 @@
 
 geometry:
   # Axial segment lengths (in inlet diameters). Wall radius blends smoothly
-  # (C2 "smootherstep") between segments, see README §3.1.
+  # (C2 "smootherstep") between segments, see README §3.7.
   L_inlet: 1.0        # straight inlet pipe
   L_converge: 1.5     # converging section
   L_throat: 1.5       # straight throat
   L_diverge: 2.5      # diverging section (diffuser)
   L_outlet: 6.0       # straight outlet pipe: long enough that the throat jet
                       # and diffuser recirculation have died out (fully developed
-                      # outflow is TRUE for every design, see README §7.2)
+                      # outflow is TRUE for every design, see README §12.3)
   # Design parameter: throat diameter d_t = D_throat / D_in
   dt_min: 0.40        # most constricted nozzle in the design space
   dt_max: 1.00        # d_t = 1 is a straight pipe (exact Poiseuille check)

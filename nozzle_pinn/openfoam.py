@@ -1,4 +1,4 @@
-"""Generate, run and read OpenFOAM reference cases (README §7).
+"""Generate, run and read OpenFOAM reference cases (README §12).
 
 Each throat diameter becomes an axisymmetric *wedge* case solved with
 ``simpleFoam`` (steady, incompressible, laminar SIMPLE algorithm) using

@@ -1,4 +1,4 @@
-"""Physics-only training loop: Adam then L-BFGS (README §5).
+"""Physics-only training loop: Adam then L-BFGS (README §7.3, §10).
 
 No CFD data enters the loss. The loss is
 

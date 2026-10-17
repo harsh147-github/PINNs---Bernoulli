@@ -1,4 +1,4 @@
-"""Inference: evaluate the trained surrogate for ANY throat diameter (README §6).
+"""Inference: evaluate the trained surrogate for ANY throat diameter (README §11).
 
 After training, a new design costs one forward pass of a small MLP — this is
 the "amortisation": the expensive part (training) is paid once, every further

@@ -1,4 +1,4 @@
-"""Figures, animation and data export (README §8).
+"""Figures, animation and data export (README §13.3).
 
 Every plot shows the FULL pipe: the solution lives on the half plane r >= 0
 and is mirrored to r < 0 (the flow is axisymmetric). Streamlines are iso-lines

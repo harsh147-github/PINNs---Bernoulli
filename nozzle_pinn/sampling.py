@@ -1,4 +1,4 @@
-"""Collocation-point sampling over the whole design space (README §5.1).
+"""Collocation-point sampling over the whole design space (README §9).
 
 A point is a triple (x, r, dt): an axial station, a radius inside THAT
 nozzle's wall, and the throat ratio of the nozzle it belongs to. Sampling dt

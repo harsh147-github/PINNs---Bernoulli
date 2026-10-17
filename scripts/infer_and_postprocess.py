@@ -1,4 +1,4 @@
-"""Amortised inference sweep + every figure, table and export (README §6, §8).
+"""Amortised inference sweep + every figure, table and export (README §11, §13).
 
 Usage
 -----

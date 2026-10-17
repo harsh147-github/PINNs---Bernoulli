@@ -1,4 +1,4 @@
-"""Parametric converging–diverging nozzle geometry (README §3.1).
+"""Parametric converging–diverging nozzle geometry (README §3.7).
 
 The wall radius is a C2-smooth function of the axial position ``x`` and the
 throat diameter ratio ``dt = D_throat / D_in``::
