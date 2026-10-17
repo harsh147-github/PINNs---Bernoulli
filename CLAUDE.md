@@ -3,7 +3,7 @@
 ## What this repo is
 
 A **parametric, data-free PINN solver** for steady, incompressible, laminar,
-axisymmetric flow (water, Re = 100) through a converging–diverging nozzle
+axisymmetric flow (water, Re = 50) through a converging–diverging nozzle
 whose **throat diameter** is a network input. One training run produces a
 surrogate for every throat ratio d_t = D_t/D_in in [0.40, 1.00]; inference of a
 new design is a single forward pass. OpenFOAM (`simpleFoam`, same
@@ -11,6 +11,12 @@ non-dimensional problem) is the reference solver.
 
 The previous contents of the repo (a quasi-1D Bernoulli PINN) were removed at
 the user's explicit request; do not resurrect them.
+
+Current result (committed): mean rel-L2 error vs OpenFOAM 0.40 % (u) / 1.1 % (p),
+worst 1.3 % / 3.9 % at d_t = 0.4; training 3.6 h on 4 CPU cores; inference
+0.26 s per design vs 34.6 s per OpenFOAM run. Velocity comes from a Stokes
+stream function (exact mass conservation) — do not revert to primitive
+(u, v, p) outputs with soft continuity; README §7.3 explains why.
 
 ## Layout
 

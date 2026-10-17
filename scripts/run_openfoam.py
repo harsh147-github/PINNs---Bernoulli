@@ -31,6 +31,9 @@ def main() -> None:
     ap.add_argument("--nx", type=int, default=None, help="override axial cells (mesh study)")
     ap.add_argument("--nr", type=int, default=None, help="override radial cells (mesh study)")
     ap.add_argument("--tag", default="", help="suffix for output names (mesh study)")
+    ap.add_argument("--jobs", type=int, default=1,
+                    help="run this many cases concurrently (one core each) and record the "
+                         "throughput in timings_parallel.json — the fair multi-core baseline")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -45,6 +48,10 @@ def main() -> None:
     tfile = out_dir / f"timings{args.tag}.json"
     timings = json.loads(tfile.read_text()) if tfile.exists() else {}
 
+    if args.jobs > 1:
+        run_parallel(cfg, noz, designs, args.jobs, out_dir)
+        return
+
     for dt in designs:
         name = f"dt_{int(round(dt * 1000)):04d}{args.tag}"
         case = REPO_ROOT / "openfoam" / "cases" / name
@@ -58,6 +65,30 @@ def main() -> None:
         tfile.write_text(json.dumps(timings, indent=2))
         print(f"[openfoam] d_t={dt:.3f}  cells={t['cells']}  iters={t['iterations']:.0f}  "
               f"solve={t['solve_s']:.1f}s  res(Ux,p)=({t['Ux']:.1e},{t['p']:.1e})", flush=True)
+
+
+def _one(job):
+    cfg, noz, dt, case = job
+    F.write_case(case, noz, float(dt), cfg)
+    return dt, F.run_case(case)
+
+
+def run_parallel(cfg, noz, designs, jobs: int, out_dir: Path) -> None:
+    """Throughput test: ``jobs`` independent cases at a time on ``jobs`` cores."""
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    work = [(cfg, noz, dt, REPO_ROOT / "openfoam" / "cases" / f"par_{int(round(dt * 1000)):04d}")
+            for dt in designs]
+    t0 = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=jobs) as ex:  # each case is its own OpenFOAM process
+        res = list(ex.map(_one, work))
+    wall = time.perf_counter() - t0
+    out = {"jobs": jobs, "n_designs": len(designs), "wall_s": wall,
+           "s_per_design_throughput": wall / len(designs),
+           "cases": {f"{dt:.3f}": t for dt, t in res}}
+    (out_dir / "timings_parallel.json").write_text(json.dumps(out, indent=2))
+    print(f"[openfoam] {len(designs)} cases, {jobs} concurrent: wall {wall:.1f} s "
+          f"-> {wall / len(designs):.1f} s per design (throughput)")
 
 
 if __name__ == "__main__":

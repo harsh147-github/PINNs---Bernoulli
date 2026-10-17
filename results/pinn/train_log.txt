@@ -1,0 +1,75 @@
+[train] monitoring against 7 OpenFOAM cases (d_t = 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00)
+[train] resuming at Adam epoch 5000 (elapsed 4984 s)
+[adam   5000] loss=3.081e-04 cont=3.26e-32 mx=2.26e-04 mr=8.13e-05 out=3.02e-07 lr=5.1e-04 t=4993s
+   monitor mean_relL2_u=1.282e-02  mean_relL2_p=1.625e-02  max_relL2_u=2.883e-02  max_relL2_p=5.954e-02
+[adam   5100] loss=2.312e-04 cont=3.34e-32 mx=1.67e-04 mr=6.40e-05 out=2.78e-07 lr=5.1e-04 t=5105s
+[adam   5200] loss=2.168e-04 cont=3.54e-32 mx=1.58e-04 mr=5.87e-05 out=2.63e-07 lr=5.1e-04 t=5206s
+[adam   5300] loss=2.073e-04 cont=3.29e-32 mx=1.52e-04 mr=5.51e-05 out=2.53e-07 lr=5.1e-04 t=5308s
+[adam   5400] loss=2.098e-04 cont=3.28e-32 mx=1.52e-04 mr=5.79e-05 out=2.78e-07 lr=5.1e-04 t=5413s
+[adam   5500] loss=3.380e-04 cont=2.12e-32 mx=2.62e-04 mr=7.53e-05 out=2.16e-07 lr=5.1e-04 t=5518s
+   monitor mean_relL2_u=9.296e-03  mean_relL2_p=1.555e-02  max_relL2_u=3.562e-02  max_relL2_p=5.876e-02
+[adam   5600] loss=2.512e-04 cont=2.32e-32 mx=1.77e-04 mr=7.41e-05 out=1.86e-07 lr=5.1e-04 t=5628s
+[adam   5700] loss=2.202e-04 cont=2.16e-32 mx=1.65e-04 mr=5.46e-05 out=1.81e-07 lr=5.1e-04 t=5734s
+[adam   5800] loss=2.120e-04 cont=2.39e-32 mx=1.60e-04 mr=5.21e-05 out=1.74e-07 lr=5.1e-04 t=5844s
+[adam   5900] loss=2.043e-04 cont=2.67e-32 mx=1.54e-04 mr=5.01e-05 out=1.67e-07 lr=5.1e-04 t=5952s
+[adam   6000] loss=2.860e-04 cont=3.90e-32 mx=2.29e-04 mr=5.70e-05 out=1.68e-07 lr=4.1e-04 t=6060s
+   monitor mean_relL2_u=8.493e-03  mean_relL2_p=1.483e-02  max_relL2_u=3.464e-02  max_relL2_p=5.498e-02
+[adam   6100] loss=1.918e-04 cont=3.45e-32 mx=1.48e-04 mr=4.39e-05 out=1.59e-07 lr=4.1e-04 t=6170s
+[adam   6200] loss=1.826e-04 cont=4.05e-32 mx=1.42e-04 mr=4.06e-05 out=1.53e-07 lr=4.1e-04 t=6277s
+[adam   6300] loss=1.766e-04 cont=3.54e-32 mx=1.38e-04 mr=3.84e-05 out=1.49e-07 lr=4.1e-04 t=6382s
+[adam   6400] loss=1.718e-04 cont=3.96e-32 mx=1.35e-04 mr=3.67e-05 out=1.45e-07 lr=4.1e-04 t=6485s
+[adam   6500] loss=2.180e-04 cont=2.97e-32 mx=1.70e-04 mr=4.82e-05 out=1.99e-07 lr=4.1e-04 t=6588s
+   monitor mean_relL2_u=6.642e-03  mean_relL2_p=1.527e-02  max_relL2_u=2.728e-02  max_relL2_p=5.986e-02
+[adam   6600] loss=1.699e-04 cont=2.72e-32 mx=1.34e-04 mr=3.55e-05 out=1.43e-07 lr=4.1e-04 t=6700s
+[adam   6700] loss=1.650e-04 cont=2.64e-32 mx=1.31e-04 mr=3.41e-05 out=1.43e-07 lr=4.1e-04 t=6807s
+[adam   6800] loss=1.623e-04 cont=2.74e-32 mx=1.28e-04 mr=3.47e-05 out=1.37e-07 lr=4.1e-04 t=6912s
+[adam   6900] loss=1.771e-04 cont=2.60e-32 mx=1.37e-04 mr=3.82e-05 out=1.63e-06 lr=4.1e-04 t=7019s
+[adam   7000] loss=3.745e-04 cont=3.45e-32 mx=3.26e-04 mr=4.86e-05 out=2.42e-07 lr=4.1e-04 t=7126s
+   monitor mean_relL2_u=9.211e-03  mean_relL2_p=1.353e-02  max_relL2_u=3.502e-02  max_relL2_p=5.111e-02
+[adam   7100] loss=1.494e-04 cont=3.77e-32 mx=1.15e-04 mr=3.46e-05 out=1.22e-07 lr=4.1e-04 t=7241s
+[adam   7200] loss=1.431e-04 cont=3.27e-32 mx=1.10e-04 mr=3.32e-05 out=1.17e-07 lr=4.1e-04 t=7348s
+[adam   7300] loss=1.390e-04 cont=3.89e-32 mx=1.07e-04 mr=3.21e-05 out=1.21e-07 lr=4.1e-04 t=7454s
+[adam   7400] loss=1.358e-04 cont=3.76e-32 mx=1.05e-04 mr=3.11e-05 out=1.14e-07 lr=4.1e-04 t=7561s
+[adam   7500] loss=3.136e-04 cont=2.81e-32 mx=2.72e-04 mr=4.18e-05 out=1.55e-07 lr=3.3e-04 t=7670s
+   monitor mean_relL2_u=6.627e-03  mean_relL2_p=1.330e-02  max_relL2_u=2.813e-02  max_relL2_p=5.180e-02
+[adam   7600] loss=1.473e-04 cont=2.47e-32 mx=1.15e-04 mr=3.21e-05 out=1.49e-07 lr=3.3e-04 t=7784s
+[adam   7700] loss=1.407e-04 cont=2.80e-32 mx=1.10e-04 mr=3.07e-05 out=1.44e-07 lr=3.3e-04 t=7893s
+[adam   7800] loss=1.366e-04 cont=2.69e-32 mx=1.06e-04 mr=3.00e-05 out=1.35e-07 lr=3.3e-04 t=8002s
+[adam   7900] loss=1.334e-04 cont=2.70e-32 mx=1.04e-04 mr=2.93e-05 out=1.26e-07 lr=3.3e-04 t=8108s
+[adam   8000] loss=5.931e-04 cont=3.67e-32 mx=4.98e-04 mr=4.99e-05 out=4.48e-05 lr=3.3e-04 t=8215s
+   monitor mean_relL2_u=1.521e-02  mean_relL2_p=1.234e-02  max_relL2_u=3.465e-02  max_relL2_p=4.392e-02
+[adam   8100] loss=1.254e-04 cont=3.49e-32 mx=9.32e-05 mr=3.21e-05 out=1.18e-07 lr=3.3e-04 t=8325s
+[adam   8200] loss=1.193e-04 cont=3.86e-32 mx=8.86e-05 mr=3.06e-05 out=1.01e-07 lr=3.3e-04 t=8427s
+[adam   8300] loss=1.160e-04 cont=3.59e-32 mx=8.61e-05 mr=2.97e-05 out=9.57e-08 lr=3.3e-04 t=8528s
+[adam   8400] loss=1.135e-04 cont=3.75e-32 mx=8.43e-05 mr=2.91e-05 out=9.43e-08 lr=3.3e-04 t=8630s
+[adam   8500] loss=2.212e-04 cont=3.10e-32 mx=1.82e-04 mr=3.87e-05 out=1.58e-07 lr=3.3e-04 t=8735s
+   monitor mean_relL2_u=6.529e-03  mean_relL2_p=1.293e-02  max_relL2_u=2.774e-02  max_relL2_p=5.011e-02
+[adam   8600] loss=1.387e-04 cont=2.43e-32 mx=1.02e-04 mr=3.66e-05 out=1.08e-07 lr=3.3e-04 t=8841s
+[adam   8700] loss=1.321e-04 cont=2.57e-32 mx=9.69e-05 mr=3.52e-05 out=9.97e-08 lr=3.3e-04 t=8943s
+[adam   8800] loss=1.280e-04 cont=3.03e-32 mx=9.40e-05 mr=3.39e-05 out=9.07e-08 lr=3.3e-04 t=9045s
+[adam   8900] loss=1.259e-04 cont=2.93e-32 mx=9.22e-05 mr=3.36e-05 out=8.63e-08 lr=3.3e-04 t=9145s
+[adam   8999] loss=1.225e-04 cont=2.82e-32 mx=9.05e-05 mr=3.19e-05 out=7.85e-08 lr=2.6e-04 t=9248s
+   monitor mean_relL2_u=5.296e-03  mean_relL2_p=1.192e-02  max_relL2_u=2.042e-02  max_relL2_p=4.458e-02
+[lbfgs     0] loss=1.892e-04 cont=2.56e-32 mx=1.58e-04 mr=3.13e-05 out=1.01e-07 t=9255s
+   monitor mean_relL2_u=5.296e-03  mean_relL2_p=1.192e-02  max_relL2_u=2.042e-02  max_relL2_p=4.458e-02
+[lbfgs   100] loss=1.389e-04 cont=3.24e-32 mx=1.10e-04 mr=2.87e-05 out=1.30e-07 t=9498s
+[lbfgs   200] loss=1.342e-04 cont=2.51e-32 mx=1.07e-04 mr=2.71e-05 out=1.21e-07 t=9732s
+[lbfgs   300] loss=1.302e-04 cont=2.78e-32 mx=1.04e-04 mr=2.63e-05 out=9.60e-08 t=9967s
+[lbfgs   400] loss=1.271e-04 cont=2.63e-32 mx=1.01e-04 mr=2.57e-05 out=1.08e-07 t=10205s
+[lbfgs   500] loss=1.240e-04 cont=2.53e-32 mx=9.91e-05 mr=2.49e-05 out=1.31e-07 t=10435s
+   monitor mean_relL2_u=4.446e-03  mean_relL2_p=1.286e-02  max_relL2_u=1.587e-02  max_relL2_p=5.006e-02
+[lbfgs   600] loss=1.215e-04 cont=2.80e-32 mx=9.74e-05 mr=2.40e-05 out=1.42e-07 t=10658s
+[lbfgs   700] loss=1.192e-04 cont=3.04e-32 mx=9.59e-05 mr=2.32e-05 out=1.60e-07 t=10877s
+[lbfgs   800] loss=1.173e-04 cont=2.84e-32 mx=9.48e-05 mr=2.23e-05 out=1.91e-07 t=11088s
+[lbfgs   900] loss=1.153e-04 cont=2.72e-32 mx=9.38e-05 mr=2.13e-05 out=1.44e-07 t=11310s
+[lbfgs  1000] loss=1.132e-04 cont=2.97e-32 mx=9.27e-05 mr=2.04e-05 out=1.34e-07 t=11519s
+   monitor mean_relL2_u=4.284e-03  mean_relL2_p=1.159e-02  max_relL2_u=1.390e-02  max_relL2_p=4.387e-02
+[lbfgs  1100] loss=1.110e-04 cont=3.27e-32 mx=9.10e-05 mr=1.99e-05 out=1.52e-07 t=11744s
+[lbfgs  1200] loss=1.091e-04 cont=2.84e-32 mx=8.95e-05 mr=1.94e-05 out=1.60e-07 t=11962s
+[lbfgs  1300] loss=1.072e-04 cont=2.85e-32 mx=8.82e-05 mr=1.89e-05 out=1.55e-07 t=12176s
+[lbfgs  1400] loss=1.058e-04 cont=2.81e-32 mx=8.74e-05 mr=1.82e-05 out=1.52e-07 t=12390s
+[lbfgs  1500] loss=1.043e-04 cont=2.54e-32 mx=8.64e-05 mr=1.78e-05 out=1.36e-07 t=12604s
+   monitor mean_relL2_u=4.028e-03  mean_relL2_p=1.081e-02  max_relL2_u=1.238e-02  max_relL2_p=3.869e-02
+[lbfgs  1600] loss=1.031e-04 cont=2.53e-32 mx=8.55e-05 mr=1.76e-05 out=1.25e-07 t=12827s
+   monitor mean_relL2_u=3.977e-03  mean_relL2_p=1.086e-02  max_relL2_u=1.254e-02  max_relL2_p=3.894e-02
+[train] done: Adam 9251s + L-BFGS 3663s = 12914s, final loss 1.027e-04

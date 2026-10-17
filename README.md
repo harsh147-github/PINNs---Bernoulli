@@ -23,8 +23,21 @@ narrower throat. After training, a new geometry costs one forward pass of a
 small network (milliseconds) instead of a fresh CFD run. This is the
 **amortisation**: you pay for training once and query designs almost for free.
 
-> **Results summary** — see [§9 Results](#9-results). It covers figures,
-> PINN-vs-OpenFOAM errors, timings and the amortisation break-even.
+> **Results summary** ([§9](#9-results)):
+>
+> - **Accuracy.** One physics-only PINN covers every throat ratio
+>   0.40–1.00. Against OpenFOAM it agrees to **0.40 % (velocity) and 1.1 %
+>   (pressure)** mean relative L2 error, worst case 1.3 % / 3.9 % at the
+>   narrowest, separated nozzle.
+> - **Dynamic pressure.** Throat dynamic pressure rises **9×** when the
+>   throat closes from d1 to 0.4, and falls to **0.27×** when it opens to
+>   1.0.
+> - **Cost.** Training took 3.6 h on a 4-core CPU. After that each new design
+>   costs **0.26 s**, versus **34.6 s** for an OpenFOAM run (13.7 s with 4
+>   in parallel).
+> - **Amortisation.** Break-even is at ~376 designs (vs serial OpenFOAM) or
+>   ~962 (vs 4-parallel OpenFOAM). At 10,000 designs the PINN is 22× / 8.8×
+>   cheaper.
 
 ---
 
@@ -53,7 +66,7 @@ sudo apt-get install openfoam            # Ubuntu package (OpenFOAM v1912) — r
 
 pytest tests -q                          # 7 unit tests
 python scripts/run_openfoam.py           # 7 OpenFOAM reference cases  (~4 min)
-python scripts/train.py                  # train the parametric PINN    (~3.5 h on a 4-core CPU)
+python scripts/train.py                  # train the parametric PINN    (~3.6 h on a 4-core CPU, minutes on a GPU)
 python scripts/infer_and_postprocess.py  # 121-design sweep, comparisons, figures, GIF, VTK (~2 min)
 # or everything at once:
 bash scripts/run_all.sh
@@ -362,7 +375,7 @@ never contributes a gradient.
 | stage | settings | purpose |
 |---|---|---|
 | Adam | 9,000 epochs, lr 1e-3 × 0.8 every 1,500 | robust global descent |
-| L-BFGS | up to 1,500 iterations, 6,000 fixed (residual-adapted) points, history 50, strong-Wolfe line search | fast local convergence to high accuracy |
+| L-BFGS | up to 1,500 iterations (1,642 function evaluations), 4,000 fixed residual-adapted points, history 50, strong-Wolfe line search | fast local convergence to high accuracy |
 
 Other settings:
 - float64 throughout. The `1/r` terms near the axis cancel, and third
@@ -371,6 +384,23 @@ Other settings:
 - 4 CPU threads.
 - Checkpoints every 5,000 epochs.
 - Wall-clock time is recorded per stage in `results/pinn/history.json`.
+- `checkpoints/adam_final.pt` is saved before L-BFGS starts.
+
+**Memory and resuming.** Third-derivative autograd graphs are large: about
+5.5 GB at 3,000–4,000 points. The first full run was killed (out of memory)
+at the start of L-BFGS, because the adaptive-sampling candidate pool was
+evaluated in one batch. Pool residuals are now evaluated in 2,000-point
+chunks. The run was continued from its epoch-5,000 checkpoint:
+
+```bash
+python scripts/train.py --resume-from results/pinn/adam_005000_part1.pt \
+    --start-epoch 5000 --prev-log results/pinn/train_log_part1.txt
+```
+
+`--prev-log` restores the loss/monitor history and the elapsed wall-clock
+time, so the reported training time covers the whole run. The learning-rate
+schedule is fast-forwarded to epoch 5,000; only Adam's moment estimates
+restart.
 
 ---
 
@@ -488,7 +518,141 @@ flow rate is exact at every section for any weights.
 <!-- RESULTS_START -->
 ## 9. Results
 
-*(Filled in from the completed run, see below.)*
+All numbers below come from the committed run. Hardware: one 4-core CPU,
+**no GPU**, float64. Tables: `results/tables/`; training log:
+`results/pinn/train_log_part1.txt` + `train_log.txt`.
+
+### 9.1 What the solver shows: throat diameter vs dynamic pressure
+
+![baseline fields](results/figures/fields_dt070.png)
+
+*Baseline design d1 (`d_t = 0.70`): static pressure, velocity magnitude and
+dynamic pressure with streamlines (iso-ψ, equal flux between lines).*
+
+![narrowest throat](results/figures/fields_dt040.png)
+
+*Narrowest throat (`d_t = 0.40`).*
+- The streamlines crowd into a fast jet: centre-line velocity ≈ 11.5 × inlet.
+- Static pressure drops below the outlet value just downstream of the throat.
+- The diffuser separates: the white dashed iso-ψ > 1 loops are recirculating
+  fluid.
+
+The question in the brief, *"when the throat diameter increases the dynamic
+pressure decreases, and when it goes below d1 it increases"*, is answered
+quantitatively by the sweep:
+
+![design sweep](results/figures/design_sweep.png)
+
+| throat ratio d_t | D_t (mm, water case) | throat centre-line dynamic pressure q/ρU² (PINN / OpenFOAM) | vs d1 | throat centre-line velocity | total Δp (PINN / OpenFOAM) | recirculation bubble (PINN / OF) |
+|---|---|---|---|---|---|---|
+| 0.40 | 4 | 66.2 / 65.5 | **× 9.0** | 11.51 | 85.9 / 88.9 | 2.55 / 2.66 D |
+| 0.50 | 5 | 27.30 / 27.30 | × 3.7 | 7.39 | 39.5 / 40.0 | 0.88 / 0.98 D |
+| 0.60 | 6 | 13.36 / 13.42 | × 1.8 | 5.17 | 22.46 / 22.47 | none / none |
+| **0.70 (d1)** | 7 | **7.38 / 7.41** | 1 | 3.84 | 14.95 / 14.92 | none / none |
+| 0.80 | 8 | 4.45 / 4.47 | × 0.60 | 2.98 | 11.20 / 11.21 | none / none |
+| 0.90 | 9 | 2.89 / 2.90 | × 0.39 | 2.40 | 9.14 / 9.20 | none / none |
+| 1.00 (straight pipe) | 10 | 1.99 / 2.00 | × 0.27 | 2.00 | 7.93 / 8.03 | none / none |
+
+- **Below d1** the throat dynamic pressure rises steeply. It scales roughly
+  like `d_t⁻⁴`, because velocity scales like `d_t⁻²` by mass conservation.
+- **Above d1** it falls, and at `d_t = 1` it reaches the Poiseuille value
+  (centre-line q = 2).
+- The **static** pressure needed to drive the flow rises even faster:
+  `Δp = 86` at `d_t = 0.4` versus 15 at d1. Viscous losses in the throat and
+  the energy dumped by the jet into the separated diffuser account for this.
+- **Below `d_t ≈ 0.53`** the diffuser separates.
+- In the water case (ρU² = 0.025 Pa per unit), `d_t = 0.4` needs 2.1 Pa
+  against 0.37 Pa at d1. SI columns are in `results/tables/design_sweep_pinn.csv`.
+
+The animation `results/figures/throat_sweep_animation.gif` sweeps the throat
+d1 → 1.0 (opening) → 0.4 (closing) → d1, showing the pressure and
+dynamic-pressure fields with streamlines evolving continuously. Every frame
+is a PINN inference.
+
+### 9.2 Accuracy vs OpenFOAM (no CFD data used in training)
+
+Error of the PINN evaluated at every OpenFOAM cell centre (31,250 cells per
+design), relative L2 norm:
+
+| d_t | u | v (rel. to ‖U‖) | p | inlet pressure (PINN / OF) | throat q error | total Δp error |
+|---|---|---|---|---|---|---|
+| 0.40 | 1.25 % | 0.07 % | 3.9 % | 85.9 / 88.9 | 1.1 % | 3.4 % |
+| 0.50 | 0.22 % | 0.03 % | 1.3 % | 39.5 / 40.0 | 0.02 % | 1.2 % |
+| 0.60 | 0.24 % | 0.03 % | 0.26 % | 22.46 / 22.47 | 0.42 % | 0.05 % |
+| 0.70 | 0.23 % | 0.03 % | 0.37 % | 14.95 / 14.92 | 0.39 % | 0.22 % |
+| 0.80 | 0.25 % | 0.03 % | 0.11 % | 11.20 / 11.21 | 0.34 % | 0.05 % |
+| 0.90 | 0.22 % | 0.03 % | 0.55 % | 9.14 / 9.20 | 0.39 % | 0.60 % |
+| 1.00 | 0.36 % | 0.05 % | 1.2 % | 7.93 / 8.03 | 0.52 % | 1.3 % |
+| **mean** | **0.40 %** | **0.04 %** | **1.09 %** | | **0.44 %** | **1.0 %** |
+
+For context, OpenFOAM's own error against the exact straight-pipe solution
+is 0.18 % (u) / 0.39 % (p). From `d_t = 0.5` to 1.0 the PINN therefore agrees
+with OpenFOAM to within a few times OpenFOAM's own discretisation error.
+
+The hardest design is the narrowest throat (`d_t = 0.4`), with a strong jet
+and a 2.7 D separation bubble. There the PINN error is 1.3 % in velocity and
+3.9 % in pressure. The error map shows it sits where the jet decays
+(x ≈ 4.5–7).
+
+![compare 0.4](results/figures/compare_openfoam_dt040.png)
+![compare d1](results/figures/compare_openfoam_dt070.png)
+![axial profiles](results/figures/axial_profiles.png)
+
+Mass conservation is exact by construction: the logged continuity residual is
+3e-32 and the flux test passes to 1e-6. The final mean squared scaled momentum
+residuals are 8.5e-5 (x) and 1.7e-5 (r).
+
+![training history](results/figures/training_history.png)
+
+*Left: the physics loss, which is the only training signal. Right: error vs
+OpenFOAM, monitored every 500 iterations but never used for training.*
+
+### 9.3 Timing and amortisation (same 4-core CPU, no GPU)
+
+| item | measured |
+|---|---|
+| PINN training (21,698 parameters) | **12,914 s = 3.59 h** (Adam 9,000 epochs 9,251 s + L-BFGS 1,642 evaluations 3,663 s) |
+| PINN inference, full field of one design (30,561 points, u, v, p, q, ψ) | **0.26 s** |
+| PINN inference, 121-design sweep | 32 s |
+| OpenFOAM, one design (31,250 cells, mesh + ~300 SIMPLE iterations, 1 core) | **34.6 s** |
+| OpenFOAM, 4 designs concurrently on the 4 cores (throughput) | **13.7 s / design** |
+
+| designs explored | PINN (train once + infer) | OpenFOAM, 1 case at a time | OpenFOAM, 4 in parallel |
+|---|---|---|---|
+| 7 (the comparison set) | 3.6 h | 4 min | 1.6 min |
+| 121 (our sweep) | 3.60 h | 1.16 h | 0.46 h |
+| **~376** | = break-even vs serial OpenFOAM | | |
+| 1,000 | **3.66 h** | 9.6 h (**2.6× slower**) | 3.8 h (break-even ~962) |
+| 10,000 | **4.32 h** | 96 h (**22× slower**) | 38 h (**8.8× slower**) |
+
+![timing](results/figures/timing_amortisation.png)
+
+**Honest reading of these numbers:**
+
+- **This case is a best case for OpenFOAM.** It is 2-D axisymmetric, laminar
+  and only 31k cells, so each CFD run takes seconds. On these CPUs the PINN
+  only pays off beyond a few hundred to ~1,000 designs.
+- **The PINN's cost is front-loaded.** Training is paid once, and every
+  further design costs a quarter of a second. OpenFOAM's cost grows linearly
+  with the number of designs.
+- **A GPU changes the PINN side most.** Training is dense linear algebra plus
+  autograd; a data-centre GPU typically trains this 10–50× faster, i.e. in
+  minutes, and batches inference over thousands of designs. `simpleFoam`
+  remains a CPU solver. GPU linear-solver back-ends exist, but give little at
+  31k cells. With a GPU the break-even moves from hundreds of designs to
+  tens.
+- **Bigger CFD problems favour the surrogate even more.** For 3-D turbulent
+  flow with millions of cells each OpenFOAM design costs hours plus meshing,
+  so the PINN wins much earlier. See §11 for the limits of plain PINNs there.
+- **The surrogate also gives what CFD does not.** It is a continuous,
+  differentiable map `d_t ↦ (u, v, p)`. Any intermediate design, a
+  derivative like `∂Δp/∂d_t`, or an optimisation loop is a cheap
+  forward/backward pass.
+
+The total training time includes the restart from the epoch-5,000 checkpoint
+after an out-of-memory kill at the start of L-BFGS (since fixed, see §5.3).
+
+It excludes the earlier development runs described in §7.2–7.3.
 <!-- RESULTS_END -->
 
 ---
@@ -646,10 +810,14 @@ See §7.
   whose "time" is `d_t`.
 
 ### `scripts/`
-- `run_openfoam.py` — loops over the configured designs. `--nx/--nr/--tag`
-  run the mesh-refinement study.
+- `run_openfoam.py` — loops over the configured designs.
+  - `--nx/--nr/--tag` run the mesh-refinement study.
+  - `--jobs 4` runs cases concurrently (one core each) and writes
+    `timings_parallel.json`, the fair multi-core OpenFOAM baseline used in
+    §9.3.
 - `train.py` — CLI wrapper around `train()` with overrides and automatic
-  monitoring when OpenFOAM results exist.
+  monitoring when OpenFOAM results exist. `--resume-from/--start-epoch/--prev-log`
+  continue an interrupted run (`parse_log` rebuilds its history).
 - `infer_and_postprocess.py` — the sweep, comparisons, timing, figures and
   exports. `section_metrics` computes throat quantities identically for the
   PINN grid and for OpenFOAM cells.
@@ -671,16 +839,28 @@ See §7.
 
 ## 11. Limitations and next steps
 
-- **Laminar only (Re = 100).** Turbulent water flow needs a RANS closure
-  (e.g. k-ω SST residuals in the loss) or a hybrid PINN with wall functions.
-  The code structure (`physics.py`) is where such terms would go.
-- **Axisymmetric.** Asymmetric inflow or non-circular sections would need the
-  full 3-D equations and a 3-D sampling domain.
-- **One design parameter.** Adding throat length or diffuser angle means
-  adding inputs to `normalise`, ranges to the config and dimensions to
-  `sampling.py`. The approach extends directly; training cost grows.
-- **Accuracy vs CFD.** The PINN is a surrogate. It is validated against
-  OpenFOAM in §9, and its error is reported, never hidden.
+- **Laminar only (Re = 50).** A real 0.5 m water pipe at 2 m/s runs at
+  Re ≈ 10⁶ and is turbulent. That needs RANS closures (e.g. k-ω SST residuals
+  in the loss) or wall-modelled formulations. Vanilla PINNs struggle at high
+  Re; this is an open research problem.
+- **Hardest design.** The `d_t = 0.4` design (strong jet + separation) is the
+  least accurate, at 3.9 % in p. A longer training budget, more points in the
+  jet, a larger network or a GPU would reduce it.
+- **Axisymmetric, one design parameter.** Throat length, diffuser angle or
+  non-circular sections mean more inputs (`normalise`), more config ranges and
+  more sampling dimensions. 3-D requires the full equations.
+- **Complex geometry → neural operators.** For many-parameter or free-form 3-D
+  shapes, **Geo-FNO, GINO, Transolver** and graph networks (MeshGraphNets) can
+  take the geometry directly as a point cloud or signed-distance field, with
+  no meshing per design. They are *data-driven*, typically trained on a few
+  hundred CFD solutions, often produced by OpenFOAM itself. So OpenFOAM
+  becomes the data generator rather than the competitor.
+  - A **physics-informed neural operator (PINO)** adds the same Navier–Stokes
+    residual loss used here, to cut the data requirement.
+  - That is the natural next step: OpenFOAM sparse data + physics loss + point
+    cloud geometry for 3-D turbulent nozzles.
+- **Hardware.** All timings are on a 4-core CPU without a GPU (see §9.3 for
+  how a GPU shifts the comparison).
 
 ## 12. References
 

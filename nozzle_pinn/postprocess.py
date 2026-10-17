@@ -185,9 +185,11 @@ def plot_history(hist: Dict[str, Any], path: Path) -> None:
     """Loss components and (monitor-only) accuracy vs OpenFOAM during training."""
     fig, axes = plt.subplots(1, 2, figsize=(13, 4.6), constrained_layout=True)
     ep = np.array(hist["epoch"])
-    for k, lab in (("loss", "total"), ("cont", "continuity"), ("mom_x", "x-momentum"),
-                   ("mom_r", "r-momentum"), ("outlet", "outlet")):
-        axes[0].semilogy(ep, hist[k], label=lab, lw=1.2 if k != "loss" else 2)
+    for k, lab in (("loss", "total"), ("mom_x", "x-momentum"),
+                   ("mom_r", "r-momentum"), ("outlet", "outlet (soft BC)")):
+        axes[0].semilogy(ep[1:], hist[k][1:], label=lab, lw=1.2 if k != "loss" else 2)
+    axes[0].text(0.02, 0.03, f"continuity residual ≡ 0 by construction (max {max(hist['cont']):.0e})",
+                 transform=axes[0].transAxes, fontsize=8)
     n_adam = sum(1 for s in hist["stage"] if s == "adam")
     if n_adam < len(ep):
         axes[0].axvline(ep[n_adam - 1], color="k", ls=":", lw=1)
@@ -214,19 +216,26 @@ def plot_history(hist: Dict[str, Any], path: Path) -> None:
 
 def plot_timing(timing: Dict[str, Any], path: Path) -> None:
     """Cumulative cost of exploring N designs: OpenFOAM vs PINN."""
-    n = np.arange(1, 1001)
+    n = np.logspace(0, 4, 400)
     of = timing["openfoam_s_per_design"] * n
     pinn = timing["pinn_train_s"] + timing["pinn_infer_s_per_design"] * n
-    fig, ax = plt.subplots(figsize=(8, 5), constrained_layout=True)
-    ax.loglog(n, of, lw=2, label=f"OpenFOAM: {timing['openfoam_s_per_design']:.1f} s / design")
-    ax.loglog(n, pinn, lw=2, label=f"PINN: {timing['pinn_train_s'] / 60:.0f} min training once + "
-                                   f"{timing['pinn_infer_s_per_design'] * 1e3:.1f} ms / design")
-    if timing.get("break_even_designs"):
-        be = timing["break_even_designs"]
-        ax.axvline(be, color="k", ls=":")
-        ax.text(be, of[0], f"  break-even ~{be:.0f} designs", fontsize=9)
+    fig, ax = plt.subplots(figsize=(8.5, 5.5), constrained_layout=True)
+    ax.loglog(n, of, lw=2, color="C3",
+              label=f"OpenFOAM, 1 case at a time: {timing['openfoam_s_per_design']:.1f} s / design")
+    if "openfoam_parallel_s_per_design" in timing:
+        ax.loglog(n, timing["openfoam_parallel_s_per_design"] * n, lw=2, ls="--", color="C1",
+                  label=f"OpenFOAM, {timing['openfoam_parallel_jobs']} cases in parallel: "
+                        f"{timing['openfoam_parallel_s_per_design']:.1f} s / design")
+    ax.loglog(n, pinn, lw=2.5, color="C0",
+              label=f"PINN: {timing['pinn_train_s'] / 3600:.2f} h training once + "
+                    f"{timing['pinn_infer_s_per_design'] * 1e3:.0f} ms / design")
+    for key, col in (("break_even_designs", "C3"), ("break_even_designs_vs_parallel", "C1")):
+        if timing.get(key):
+            be = timing[key]
+            ax.axvline(be, color=col, ls=":", lw=1)
+            ax.text(be * 1.06, 40.0, f"break-even\n~{be:.0f} designs", fontsize=8, color=col)
     ax.set_xlabel("number of throat diameters explored")
-    ax.set_ylabel("cumulative wall-clock time [s] (same 4-core CPU)")
+    ax.set_ylabel("cumulative wall-clock time [s] (same 4-core CPU, no GPU)")
     ax.grid(alpha=0.3, which="both")
     ax.legend()
     ax.set_title("Amortisation: pay for training once, query designs for ~free")

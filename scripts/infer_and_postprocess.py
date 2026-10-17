@@ -166,6 +166,20 @@ def main() -> None:
         "openfoam_equivalent_sweep_s": of_per * len(dts),
         "break_even_designs": hist["time_total_s"] / max(of_per - infer_s, 1e-12) if base else None,
     }
+    pfile = out / "openfoam" / "timings_parallel.json"
+    if pfile.exists():
+        par = json.loads(pfile.read_text())
+        of_par = float(par["s_per_design_throughput"])
+        timing.update({
+            "openfoam_parallel_jobs": par["jobs"],
+            "openfoam_parallel_s_per_design": of_par,
+            "break_even_designs_vs_parallel": hist["time_total_s"] / max(of_par - infer_s, 1e-12),
+        })
+    for n in (121, 1000, 10000):
+        timing[f"pinn_total_s_{n}_designs"] = hist["time_total_s"] + infer_s * n
+        timing[f"openfoam_serial_s_{n}_designs"] = of_per * n
+        if "openfoam_parallel_s_per_design" in timing:
+            timing[f"openfoam_parallel_s_{n}_designs"] = timing["openfoam_parallel_s_per_design"] * n
     P.write_json(tabs / "timing.json", timing)
     if base:
         P.plot_timing(timing, figs / "timing_amortisation.png")
